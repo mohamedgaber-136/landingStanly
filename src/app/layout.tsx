@@ -22,8 +22,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${almarai.variable} font-sans antialiased `}>
-        {children}
+      <body
+        className={`${almarai.variable} font-sans antialiased bg-[#114577] min-h-screen flex items-center justify-center`}
+      >
+        <div className="w-full min-h-screen flex items-center justify-center">
+          {children}
+        </div>
         <Toaster
           position="top-right"
           toastOptions={{

@@ -108,8 +108,7 @@ const BookModal: React.FC<BookModalProps> = ({
       setIsLoading(true);
       const token = localStorage.getItem("authToken");
       const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL ||
-        "https://gaber-airplans.onrender.com/api/v1";
+        process.env.NEXT_PUBLIC_API_URL || "https://api.stanlyegypt.com/api/v1";
 
       // Check booking status
       const response = await fetch(`${apiUrl}/bookings/${currentBookingId}`, {
@@ -565,19 +564,30 @@ const BookModal: React.FC<BookModalProps> = ({
 
     try {
       const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL ||
-        "https://gaber-airplans.onrender.com/api/v1";
+        process.env.NEXT_PUBLIC_API_URL || "https://api.stanlyegypt.com/api/v1";
 
       // Step 1: Create booking
       const bookingData = {
         tripId: tripData?.id,
+        travelerName: bookerName,
+        travelerEmail: bookerEmail,
+        travelerPhone: bookerPhone,
         seatIds: selectedSeats,
-        passengers: passengers.map((p) => ({
-          type: p.type,
-          name: p.name,
-          passportNumberOrIdNumber: p.passportNumberOrIdNumber,
-          files: p.files || [], // Send empty array if no files
-        })),
+        passengers: [
+          ...passengers.map((p) => ({
+            type: p.type,
+            name: p.name,
+            passportNumberOrIdNumber: p.passportNumberOrIdNumber,
+            files: p.files || [],
+          })),
+          // Add infants if any
+          ...Array.from({ length: numberOfInfants }).map((_, i) => ({
+            type: "INFANT",
+            name: `Infant ${i + 1}`,
+            passportNumberOrIdNumber: "",
+            files: [],
+          })),
+        ],
       };
 
       const bookingResponse = await fetch(`${apiUrl}/bookings`, {

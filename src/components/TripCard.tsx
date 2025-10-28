@@ -113,6 +113,54 @@ const TripCard = forwardRef<TripCardRef, TripCardProps>(
             </button>
           </div>
         </div>
+        {/* Seat Map Renderer */}
+        {tripData?.seatMap && Array.isArray(tripData.seatMap) && (
+          <div className="mt-6">
+            {/* <div className="font-semibold mb-2">Seat Map</div> */}
+            <div className="grid grid-cols-4 gap-2">
+              {(() => {
+                // Group seats by row (A, B, C, D...)
+                const seatRows: { [row: string]: any[] } = {};
+                tripData.seatMap.forEach((seat: any) => {
+                  // seatNumber like 'A1', 'B2', etc.
+                  const match = seat.seatNumber.match(/^([A-Z]+)(\d+)$/);
+                  if (!match) return;
+                  const row = match[1];
+                  if (!seatRows[row]) seatRows[row] = [];
+                  seatRows[row].push(seat);
+                });
+                // Sort rows alphabetically, seats numerically
+                const sortedRows = Object.keys(seatRows).sort();
+                return sortedRows.map((row) => (
+                  <div key={row} className="flex flex-col gap-2">
+                    {seatRows[row]
+                      .sort((a, b) => {
+                        const anum = parseInt(
+                          a.seatNumber.replace(/^[A-Z]+/, "")
+                        );
+                        const bnum = parseInt(
+                          b.seatNumber.replace(/^[A-Z]+/, "")
+                        );
+                        return anum - bnum;
+                      })
+                      .map((seat) => (
+                        <div
+                          key={seat.seatNumber}
+                          className={`w-12 h-10 flex items-center justify-center rounded-md border text-sm font-bold mb-1 ${
+                            seat.isAvailable
+                              ? "bg-white text-blue-800 border-gray-300"
+                              : "bg-red-500 text-white border-red-500"
+                          }`}
+                        >
+                          {seat.seatNumber}
+                        </div>
+                      ))}
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        )}
         <BookModal
           isModalOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}

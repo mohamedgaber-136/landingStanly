@@ -17,9 +17,8 @@ const LoginSection: React.FC = () => {
 
     try {
       const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL ||
-        "https://gaber-airplans.onrender.com/api/v1";
-      const response = await fetch(`${apiUrl}/auth/login?role=USER`, {
+        process.env.NEXT_PUBLIC_API_URL || "https://api.stanlyegypt.com/api/v1";
+      const response = await fetch(`${apiUrl}/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -1,14 +1,14 @@
 "use client";
 
+import React, { useState, useRef, useEffect } from "react";
 import Navbar from "@/components/Navbar";
-import SearchBar from "@/components/SearchBar";
 import TripCard, { TripCardRef } from "@/components/TripCard";
 import Image from "next/image";
-import { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 
+// Minimal Trip type used in this page
 interface Trip {
-  id?: string;
+  id: string;
   from: string;
   to: string;
   departure: string;
@@ -16,10 +16,12 @@ interface Trip {
   flightNumber: string;
   price: string;
   image?: string;
-  seatMap?: any[];
+  seatMap?: any;
   basePrice?: number;
   currency?: string;
 }
+
+const locations = ["Siwa", "Cairo", "Alexandria", "Luxor", "Aswan", "Dubai"];
 
 export default function Home() {
   const [searchResults, setSearchResults] = useState<Trip[]>([]);
@@ -27,6 +29,10 @@ export default function Home() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const tripCardRefs = useRef<{ [key: string]: TripCardRef }>({});
+  const [from, setFrom] = useState(locations[0]);
+  const [to, setTo] = useState(locations[1]);
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [selectedDate, setSelectedDate] = useState<string>("");
 
   // Handle pending booking restoration after login with auto-search
   useEffect(() => {
@@ -155,7 +161,7 @@ export default function Home() {
 
         const apiUrl =
           process.env.NEXT_PUBLIC_API_URL ||
-          "https://gaber-airplans.onrender.com/api/v1";
+          "https://api.stanlyegypt.com/api/v1";
         const response = await fetch(`${apiUrl}/trips?${params.toString()}`);
 
         if (!response.ok) {
@@ -339,25 +345,39 @@ export default function Home() {
     setSearchError(null);
     setHasSearched(true);
     // Map API results to TripCard props format
-    const mappedResults: Trip[] = results.map((trip: any) => {
-      // Format the departure date from ISO string to readable format
-      const departureDate = new Date(trip.departureTime).toLocaleDateString();
-
+    const mappedResults: Trip[] = results.map((trip: any, idx: number) => {
+      // Accept both full and minimal trip objects
+      const departureDate = trip.departureTime
+        ? new Date(trip.departureTime).toLocaleDateString()
+        : trip.departure
+        ? trip.departure
+        : "";
       return {
-        id: trip.id,
-        from: trip.origin,
-        to: trip.destination,
+        id:
+          trip.id ||
+          `${trip.from}-${trip.to}-${
+            trip.departureTime || trip.departure || idx
+          }`,
+        from: trip.from || trip.origin || "",
+        to: trip.to || trip.destination || "",
         departure: departureDate,
-        availableSeats: trip.availableSeats,
-        flightNumber: trip.flightNumber,
-        price: `$${trip.basePrice} ${trip.currency}`,
-        image: "/siwa.jpg", // Default image, you might want to add logic for different destinations
+        availableSeats: trip.availableSeats ?? 0,
+        flightNumber: trip.flightNumber || "",
+        price:
+          trip.basePrice !== undefined
+            ? `$${trip.basePrice}${trip.currency ? " " + trip.currency : ""}`
+            : trip.price || "",
+        image: "/siwa.jpg",
         seatMap: trip.seatMap,
         basePrice: trip.basePrice,
         currency: trip.currency,
       };
     });
     setSearchResults(mappedResults);
+    // set default selected date to first result date (if any)
+    if (mappedResults.length > 0) {
+      setSelectedDate(mappedResults[0].departure);
+    }
   };
 
   const handleSearchError = (error: string) => {
@@ -372,75 +392,243 @@ export default function Home() {
     setSearchError(null);
   };
 
+  // Form submit handler for the BUY TICKET form
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // start
+    setIsSearching(true);
+    setSearchError(null);
+
+    try {
+      // Use provided dates or sensible defaults
+      let start = dateRange.start;
+      let end = dateRange.end;
+      if (!start) start = new Date().toISOString().split("T")[0];
+      if (!end)
+        end = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0];
+
+      const departureFrom = `${start}T00:00:00.000Z`;
+      const departureTo = `${end}T23:59:59.000Z`;
+
+      const arrivalFromDate = new Date(start);
+      arrivalFromDate.setDate(arrivalFromDate.getDate() + 1);
+      const arrivalToDate = new Date(end);
+      arrivalToDate.setDate(arrivalToDate.getDate() + 3);
+
+      const arrivalFrom = arrivalFromDate.toISOString().replace(".000Z", "Z");
+      const arrivalTo = arrivalToDate.toISOString().replace(".000Z", "Z");
+
+      const params = new URLSearchParams({
+        from,
+        to,
+        departureFrom,
+        departureTo,
+        arrivalFrom,
+        arrivalTo,
+        offset: "0",
+      });
+
+      const apiUrl =
+        process.env.NEXT_PUBLIC_API_URL || "https://api.stanlyegypt.com/api/v1";
+      const response = await fetch(`${apiUrl}/trips/?${params.toString()}`);
+
+      if (!response.ok) throw new Error("Failed to fetch trips");
+
+      const data = await response.json();
+      // Accept data.data (API), data.trips, or data as array
+      const tripsArr = Array.isArray(data.data)
+        ? data.data
+        : Array.isArray(data.trips)
+        ? data.trips
+        : Array.isArray(data)
+        ? data
+        : [];
+      handleSearchResults(tripsArr);
+    } catch (err: any) {
+      console.error("Search error:", err);
+      handleSearchError(err?.message || "Failed to search trips");
+    }
+  };
+
   return (
-    <div className="md:py-15 md:px-10 bg-white/95 w-full flex flex-col gap-3 h-screen">
-      <Navbar />
-      <div className="md:rounded-2xl bg-[url('/siwa.jpg')] bg-center bg-cover w-full h-full grid md:grid-cols-1 min-h-[500px]">
-        <div className="flex flex-col mt-25 md:mt-0 justify-end gap-3 p-5 text-white">
-          <h2 className="text-4xl md:text-6xl font-semibold  m-0">
-            Book the best
-          </h2>
-          <h2 className="text-4xl md:text-6xl font-semibold text-white">
-            {" "}
-            trip of your life
-          </h2>
-          <h3 className="text-xl text-white ">
-            Siwa, Egypt’s hidden gem — where the desert embraces life and the
-            heart finds stillness
-          </h3>
-          <SearchBar
-            onSearchResults={handleSearchResults}
-            onSearchStart={handleSearchStart}
-            onSearchError={handleSearchError}
-          />
+    <div className="min-h-screen flex items-center justify-center bg-[#114577]">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-auto p-8 flex flex-col gap-8">
+        <div className="flex flex-col md:flex-row gap-8">
+          <div className="flex-1 flex items-center justify-center">
+            <Image
+              src="/siwa.jpg"
+              width={400}
+              height={300}
+              alt="Siwa"
+              className="rounded-xl object-cover"
+            />
+          </div>
+          <div className="flex-1 flex flex-col gap-4 justify-center">
+            <h2 className="text-2xl font-bold text-[#114577] mb-2">
+              Fly to {to}
+            </h2>
+            <div className="text-gray-700 mb-2">
+              <span className="font-semibold">Coach Type</span> : AC
+            </div>
+            <div className="text-gray-700 mb-2">
+              <span className="font-semibold">Passenger Capacity</span> : 44
+            </div>
+            <div className="flex gap-4 mb-2">
+              <div className="bg-gray-100 rounded-lg p-2 flex-1">
+                <div className="font-semibold text-[#114577]">Boarding</div>
+                <div className="text-sm text-gray-600">
+                  Siwa Oasis | North Airport (2:00 pm)
+                </div>
+              </div>
+              <div className="bg-gray-100 rounded-lg p-2 flex-1">
+                <div className="font-semibold text-[#114577]">Dropping</div>
+                <div className="text-sm text-gray-600">
+                  Cairo | East Airport (3:30 am)
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col justify-center items-center gap-4  mt-65 md:my-2">
-        {isSearching && (
-          <div className="text-center py-8">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#179FDB]"></div>
-            <p className="mt-2 text-gray-600">Searching for trips...</p>
-          </div>
-        )}
+        <div className="bg-white rounded-xl shadow p-6 mt-4">
+          <h3 className="text-lg font-bold text-[#114577] mb-4">BUY TICKET</h3>
+          <form className="w-full" onSubmit={handleSubmit}>
+            <div className="w-full">
+              <div className="flex flex-col md:flex-row gap-4 md:gap-6 w-full">
+                <div className="flex flex-col w-full md:w-1/4">
+                  <label className="font-semibold mb-1">From</label>
+                  <select
+                    className="p-2 rounded-lg border border-gray-300"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                  >
+                    {locations.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-        {searchError && (
-          <div className="text-center py-8">
-            <div className="text-red-500 mb-2">⚠️ Search Error</div>
-            <p className="text-gray-600">{searchError}</p>
-          </div>
-        )}
+                <div className="flex flex-col w-full md:w-1/4">
+                  <label className="font-semibold mb-1">To</label>
+                  <select
+                    className="p-2 rounded-lg border border-gray-300"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                  >
+                    {locations.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-        {searchResults.length > 0 ? (
-          searchResults.map((trip, index) => {
-            const tripKey = trip.id || `${trip.from}-${trip.to}`;
-            return (
-              <TripCard
-                key={trip.id || index}
-                ref={(ref) => {
-                  if (ref) {
-                    tripCardRefs.current[tripKey] = ref;
-                  } else {
-                    delete tripCardRefs.current[tripKey];
-                  }
-                }}
-                from={trip.from}
-                to={trip.to}
-                departure={trip.departure}
-                availableSeats={trip.availableSeats}
-                flightNumber={trip.flightNumber}
-                price={trip.price}
-                image={trip.image}
-                tripData={trip}
-              />
-            );
-          })
-        ) : hasSearched && !isSearching && !searchError ? (
-          // No results found after search
-          <div className="text-center py-8">
-            <div className="text-gray-500 mb-2">🔍 No trips found</div>
-            <p className="text-gray-600">Try adjusting your search criteria</p>
-          </div>
-        ) : null}
+                <div className="flex flex-col w-full md:w-1/4">
+                  <label className="font-semibold mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    className="p-2 rounded-lg border border-gray-300"
+                    value={dateRange.start}
+                    onChange={(e) =>
+                      setDateRange({ ...dateRange, start: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="flex flex-col w-full md:w-1/4">
+                  <label className="font-semibold mb-1">End Date</label>
+                  <input
+                    type="date"
+                    className="p-2 rounded-lg border border-gray-300"
+                    value={dateRange.end}
+                    onChange={(e) =>
+                      setDateRange({ ...dateRange, end: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end mt-3 w-full">
+                <button
+                  type="submit"
+                  disabled={isSearching}
+                  className={`bg-[#179FDB] text-white font-semibold px-6 py-3 rounded-xl hover:bg-[#0f7ac3] transition w-full md:w-auto md:min-w-[120px] ${
+                    isSearching ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
+                >
+                  {isSearching ? "Searching..." : "Search"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+        {/* Results area */}
+        <div className="mt-4 w-full">
+          {searchResults.length === 0 && hasSearched ? (
+            <div className="bg-white rounded-lg p-6 text-center text-gray-600">
+              No trips found for the selected dates.
+            </div>
+          ) : null}
+
+          {searchResults.length > 0 && (
+            <div className="bg-white rounded-lg shadow p-4 mt-4">
+              {/* Date tabs */}
+              <div className="flex gap-3 mb-4 flex-wrap">
+                {Array.from(new Set(searchResults.map((t) => t.departure))).map(
+                  (d) => (
+                    <button
+                      key={d}
+                      onClick={() => setSelectedDate(d)}
+                      className={`px-4 py-2 rounded-md border text-sm ${
+                        selectedDate === d
+                          ? "bg-[#179FDB] text-white border-[#179FDB]"
+                          : "bg-white text-gray-700 border-gray-200"
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* Header row */}
+              <div className="flex items-center justify-between border-t pt-3">
+                <div className="text-sm text-gray-600">
+                  {searchResults[0]?.from} ➜ {searchResults[0]?.to}
+                </div>
+                <div className="text-sm text-gray-600">{selectedDate}</div>
+              </div>
+
+              {/* List of trip cards for selectedDate */}
+              <div className="mt-4 flex flex-col gap-4">
+                {searchResults
+                  .filter((t) =>
+                    selectedDate ? t.departure === selectedDate : true
+                  )
+                  .map((trip) => (
+                    <div key={trip.id} className="border-t pt-4">
+                      <TripCard
+                        ref={(r) => {
+                          tripCardRefs.current[trip.id] = r as TripCardRef;
+                        }}
+                        from={trip.from}
+                        to={trip.to}
+                        departure={trip.departure}
+                        availableSeats={trip.availableSeats}
+                        flightNumber={trip.flightNumber}
+                        price={trip.price}
+                        image={trip.image}
+                        tripData={trip}
+                      />
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
