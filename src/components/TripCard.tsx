@@ -65,8 +65,9 @@ const TripCard = forwardRef<TripCardRef, TripCardProps>(
 
     return (
       <div
-        className=" bg-white border border-gray-300 p-4 rounded-2xl shadow-lg flex flex-col md:flex-row w-[600px] max-w-[90%] gap-4
-      transform transition-transform duration-300 "
+        className={
+          "bg-white border border-gray-300 p-4 rounded-2xl shadow-lg flex flex-col md:flex-row gap-4 transform transition-transform duration-300 w-full md:w-[600px] max-w-full"
+        }
       >
         {/* Trip Image */}
         <div className="shrink-0">
