@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
-const locations = ["Siwa", "Cairo", "Alexandria", "Luxor", "Aswan", "Dubai"];
+const locations = ["Siwa", "Cairo"];
 
 const getRandomDate = (start: Date, end: Date) => {
   return new Date(

@@ -21,7 +21,7 @@ interface Trip {
   currency?: string;
 }
 
-const locations = ["Siwa", "Cairo", "Alexandria", "Luxor", "Aswan", "Dubai"];
+const locations = ["Siwa", "Cairo"];
 
 export default function Home() {
   const [searchResults, setSearchResults] = useState<Trip[]>([]);
@@ -33,6 +33,55 @@ export default function Home() {
   const [to, setTo] = useState(locations[1]);
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [selectedDate, setSelectedDate] = useState<string>("");
+
+  // Handle payment success redirect from Paymob
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isPaymentSuccess = params.get("success") === "true";
+
+    if (isPaymentSuccess) {
+      toast.success("Payment successful! Your booking is being confirmed...", {
+        duration: 3000,
+      });
+
+      // Get merchant order ID to match with our booking
+      const merchantOrderId = params.get("merchant_order_id");
+
+      // Attempt to reopen the booking modal with pending booking data
+      const pendingBooking = localStorage.getItem("pendingBooking");
+      if (pendingBooking) {
+        try {
+          const bookingData = JSON.parse(pendingBooking);
+
+          // Store payment success flag to trigger modal opening
+          localStorage.setItem(
+            "paymentSuccessful",
+            JSON.stringify({
+              merchantOrderId,
+              timestamp: Date.now(),
+              shouldOpenModal: true,
+            })
+          );
+
+          // Update pending booking to trigger modal reopening
+          const updatedBookingData = {
+            ...bookingData,
+            shouldReopenModal: true,
+            paymentSuccessful: true,
+          };
+          localStorage.setItem(
+            "pendingBooking",
+            JSON.stringify(updatedBookingData)
+          );
+        } catch (error) {
+          console.error("Error handling payment success:", error);
+        }
+      }
+
+      // Clean up URL to remove query parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   // Handle pending booking restoration after login with auto-search
   useEffect(() => {

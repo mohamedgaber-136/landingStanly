@@ -60,6 +60,61 @@ const BookModal: React.FC<BookModalProps> = ({
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
   const [invoiceData, setInvoiceData] = useState<BookingData | null>(null);
 
+  // Handle payment success redirect from Paymob
+  useEffect(() => {
+    if (isModalOpen) {
+      const paymentSuccessData = localStorage.getItem("paymentSuccessful");
+      const pendingBooking = localStorage.getItem("pendingBooking");
+
+      if (paymentSuccessData && pendingBooking) {
+        try {
+          const successData = JSON.parse(paymentSuccessData);
+          const bookingData = JSON.parse(pendingBooking);
+
+          // If payment was successful, show confirmation screen
+          if (successData.shouldOpenModal && bookingData.paymentSuccessful) {
+            // Set booking confirmation state
+            setBookingConfirmed(true);
+            setShowPayment(false);
+            setPaymentUrl(null);
+
+            // Restore booking details
+            setBookerName(bookingData.bookerName || "");
+            setBookerEmail(bookingData.bookerEmail || "");
+            setBookerPhone(bookingData.bookerPhone || "");
+            setNumberOfAdults(bookingData.numberOfAdults || 1);
+            setNumberOfInfants(bookingData.numberOfInfants || 0);
+            setSelectedSeats(bookingData.selectedSeats || []);
+            setPassengers(bookingData.passengers || []);
+            setTotalAmount(bookingData.totalAmount || 0);
+
+            // Set booking details for confirmation screen
+            setBookingDetails({
+              from: bookingData.from,
+              to: bookingData.to,
+              price: bookingData.price || bookingData.totalAmount,
+              selectedSeats: bookingData.selectedSeats,
+              passengers: bookingData.passengers,
+              bookerName: bookingData.bookerName,
+              bookerEmail: bookingData.bookerEmail,
+              bookingId: successData.merchantOrderId,
+              status: "CONFIRMED",
+            });
+
+            // Clear the payment success flag
+            localStorage.removeItem("paymentSuccessful");
+
+            toast.success("Payment confirmed! Your booking is complete.", {
+              duration: 4000,
+            });
+          }
+        } catch (error) {
+          console.error("Error handling payment success in modal:", error);
+        }
+      }
+    }
+  }, [isModalOpen]);
+
   // Reset all states when modal is closed
   const resetModalStates = () => {
     setPaymentUrl(null);
@@ -147,7 +202,7 @@ const BookModal: React.FC<BookModalProps> = ({
           bookerEmail: bookerEmail,
           bookerPhone: bookerPhone,
           totalAmount: totalAmount,
-          currency: tripData?.currency || "USD",
+          currency: "EGP",
           bookingDate: bookingData.createdAt || new Date().toISOString(),
           paymentStatus: bookingData.status,
         };
