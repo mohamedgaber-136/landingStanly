@@ -489,6 +489,8 @@ const BookModal: React.FC<BookModalProps> = ({
     // Check if all adult passengers have required info (files are optional)
     for (const passenger of passengers) {
       if (!passenger.name || !passenger.passportNumberOrIdNumber) return false;
+      // Passport/ID should be at least 3 characters
+      if (passenger.passportNumberOrIdNumber.trim().length < 3) return false;
     }
 
     return true;
@@ -524,9 +526,32 @@ const BookModal: React.FC<BookModalProps> = ({
   ) => {
     const file = event.target.files?.[0];
     if (file) {
+      // Check file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxSize) {
+        toast.error("File size must be less than 5MB", { duration: 4000 });
+        return;
+      }
+
+      // Check file type
+      const allowedTypes = ["image/jpeg", "image/png", "application/pdf"];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error("File type must be JPEG, PNG, or PDF", { duration: 4000 });
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = () => {
         const base64Content = reader.result as string;
+        const base64String = base64Content.split(",")[1]; // Remove data URL prefix
+
+        if (!base64String) {
+          toast.error("Failed to read file. Please try again.", {
+            duration: 4000,
+          });
+          return;
+        }
+
         const fileData = {
           type:
             passengers[index].type === "ADULT"
@@ -534,11 +559,24 @@ const BookModal: React.FC<BookModalProps> = ({
               : ("BIRTH_CERTIFICATE" as const),
           originalFilename: file.name,
           mimeType: file.type,
-          base64Content: base64Content.split(",")[1], // Remove data URL prefix
+          base64Content: base64String,
         };
 
+        console.log(
+          `File uploaded for passenger ${index}:`,
+          `Name: ${file.name}, Size: ${file.size} bytes, Type: ${file.type}`
+        );
+
         updatePassenger(index, "files", [fileData]);
+        toast.success("File uploaded successfully", { duration: 2000 });
       };
+
+      reader.onerror = () => {
+        toast.error("Failed to read file. Please try again.", {
+          duration: 4000,
+        });
+      };
+
       reader.readAsDataURL(file);
     }
   };
@@ -629,21 +667,28 @@ const BookModal: React.FC<BookModalProps> = ({
         travelerPhone: bookerPhone,
         seatIds: selectedSeats,
         passengers: [
-          ...passengers.map((p) => ({
-            type: p.type,
-            name: p.name,
-            passportNumberOrIdNumber: p.passportNumberOrIdNumber,
-            files: p.files || [],
-          })),
+          ...passengers
+            .filter((p) => p.name.trim() !== "") // Only include passengers with names
+            .map((p) => ({
+              type: p.type,
+              name: p.name.trim(),
+              passportNumberOrIdNumber: p.passportNumberOrIdNumber.trim(),
+              files: Array.isArray(p.files) ? p.files : [],
+            })),
           // Add infants if any
           ...Array.from({ length: numberOfInfants }).map((_, i) => ({
-            type: "INFANT",
+            type: "INFANT" as const,
             name: `Infant ${i + 1}`,
             passportNumberOrIdNumber: "",
             files: [],
           })),
         ],
       };
+
+      console.log(
+        "Booking payload being sent:",
+        JSON.stringify(bookingData, null, 2)
+      );
 
       const bookingResponse = await fetch(`${apiUrl}/bookings`, {
         method: "POST",
@@ -655,7 +700,11 @@ const BookModal: React.FC<BookModalProps> = ({
       });
 
       if (!bookingResponse.ok) {
-        throw new Error("Booking creation failed");
+        const errorResponse = await bookingResponse.text();
+        console.error("Booking creation error response:", errorResponse);
+        throw new Error(
+          `Booking creation failed: ${bookingResponse.status} ${bookingResponse.statusText}`
+        );
       }
 
       const bookingResult = await bookingResponse.json();
@@ -687,7 +736,11 @@ const BookModal: React.FC<BookModalProps> = ({
       );
 
       if (!paymentResponse.ok) {
-        throw new Error("Payment intent creation failed");
+        const errorResponse = await paymentResponse.text();
+        console.error("Payment intent creation error response:", errorResponse);
+        throw new Error(
+          `Payment intent creation failed: ${paymentResponse.status} ${paymentResponse.statusText}`
+        );
       }
 
       const paymentResult = await paymentResponse.json();
@@ -1011,32 +1064,6 @@ const BookModal: React.FC<BookModalProps> = ({
                       Paymob
                     </div>
                   </div>
-                  <button
-                    onClick={handlePaymentComplete}
-                    disabled={isLoading}
-                    className="w-full sm:w-auto px-4 py-2 sm:px-6 sm:py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-1 text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  >
-                    {isLoading ? (
-                      <div className="flex items-center gap-2 justify-center">
-                        <svg
-                          className="animate-spin w-4 h-4 sm:w-5 sm:h-5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                          />
-                        </svg>
-                        Verifying...
-                      </div>
-                    ) : (
-                      "Payment Complete ✓"
-                    )}
-                  </button>
                 </div>
               </div>
             ) : (
