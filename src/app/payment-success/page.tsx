@@ -1,6 +1,6 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { openInvoicePDF, type BookingData } from "@/utils/pdfGenerator";
 
@@ -16,7 +16,7 @@ interface BookingDetails {
   status: string;
 }
 
-const PaymentSuccessPage = () => {
+const PaymentSuccessContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [bookingDetails, setBookingDetails] = useState<BookingDetails | null>(
@@ -400,6 +400,23 @@ const PaymentSuccessPage = () => {
         )}
       </div>
     </div>
+  );
+};
+
+const SuspenseFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="bg-white rounded-3xl shadow-2xl p-8 text-center border border-gray-100">
+      <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-blue-500 rounded-full mx-auto mb-4"></div>
+      <p className="text-gray-700 font-semibold">Loading payment details…</p>
+    </div>
+  </div>
+);
+
+const PaymentSuccessPage = () => {
+  return (
+    <Suspense fallback={<SuspenseFallback />}>
+      <PaymentSuccessContent />
+    </Suspense>
   );
 };
 
