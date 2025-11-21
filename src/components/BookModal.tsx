@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import {
   generateInvoicePDF,
@@ -53,12 +53,27 @@ const BookModal: React.FC<BookModalProps> = ({
   const [totalAmount, setTotalAmount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [seats, setSeats] = useState<any[]>([]);
+  const [isLoadingSeats, setIsLoadingSeats] = useState(false);
+  const [seatError, setSeatError] = useState<string | null>(null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [bookingDetails, setBookingDetails] = useState<any>(null);
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
   const [invoiceData, setInvoiceData] = useState<BookingData | null>(null);
+  const skipPassengerSyncRef = useRef(false);
+
+  const createEmptyPassenger = (): Passenger => ({
+    type: "ADULT",
+    name: "",
+    passportNumberOrIdNumber: "",
+    files: [],
+  });
+
+  const isValidUUID = (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value
+    );
 
   // Handle payment success redirect from Paymob
   useEffect(() => {
@@ -85,6 +100,7 @@ const BookModal: React.FC<BookModalProps> = ({
             setNumberOfAdults(bookingData.numberOfAdults || 1);
             setNumberOfInfants(bookingData.numberOfInfants || 0);
             setSelectedSeats(bookingData.selectedSeats || []);
+            skipPassengerSyncRef.current = true;
             setPassengers(bookingData.passengers || []);
             setTotalAmount(bookingData.totalAmount || 0);
 
@@ -124,6 +140,8 @@ const BookModal: React.FC<BookModalProps> = ({
     setBookingDetails(null);
     setInvoiceData(null);
     setPhoneError("");
+    setSeatError(null);
+    setSelectedSeats([]);
   };
 
   // Enhanced onClose to reset states and cancel booking if needed
@@ -310,40 +328,80 @@ const BookModal: React.FC<BookModalProps> = ({
     }
   };
 
-  // Initialize seats on component mount and when tripData changes
+  // Initialize seats when modal opens or trip changes
   useEffect(() => {
-    // Generate seats from trip data or mock data
-    let newSeats;
-
-    // If we have real seat data from the API, use it
-    if (tripData?.seatMap && Array.isArray(tripData.seatMap)) {
-      newSeats = tripData.seatMap.map((seat: any) => ({
-        id: seat.id, // This should be the UUID from the API
-        seatNumber: seat.seatNumber,
-        isAvailable: seat.isAvailable,
-        isSelected: false,
-      }));
-    } else {
-      // Fallback to mock data if no real seat data
-      newSeats = [];
-      const rows = 11; // 44 seats = 11 rows × 4 seats
-      const seatsPerRow = 4;
-      const seatLetters = ["A", "B", "C", "D"];
-
-      for (let row = 1; row <= rows; row++) {
-        for (let seatIndex = 0; seatIndex < seatsPerRow; seatIndex++) {
-          newSeats.push({
-            id: `mock-seat-${row}${seatLetters[seatIndex]}`, // Mock UUID-like ID
-            seatNumber: `${row}${seatLetters[seatIndex]}`,
-            isAvailable: Math.random() > 0.3, // 70% available
-            isSelected: false,
-          });
-        }
+    const loadSeats = async () => {
+      if (!isModalOpen || !tripData?.id) {
+        setSeats([]);
+        return;
       }
+
+      setIsLoadingSeats(true);
+      setSeatError(null);
+
+      try {
+        let seatMap = Array.isArray(tripData.seatMap) ? tripData.seatMap : null;
+
+        if (!seatMap || seatMap.length === 0) {
+          const apiUrl =
+            process.env.NEXT_PUBLIC_API_URL ||
+            "https://api.stanlyegypt.com/api/v1";
+          const response = await fetch(`${apiUrl}/trips/${tripData.id}`);
+
+          if (!response.ok) {
+            throw new Error("Unable to load seat map");
+          }
+
+          const tripDetails = await response.json();
+          seatMap = Array.isArray(tripDetails?.seatMap)
+            ? tripDetails.seatMap
+            : Array.isArray(tripDetails?.data?.seatMap)
+            ? tripDetails.data.seatMap
+            : [];
+        }
+
+        const normalizedSeats = (seatMap || [])
+          .map((seat: any) => ({
+            id: seat.id,
+            seatNumber: seat.seatNumber,
+            isAvailable:
+              typeof seat.isAvailable === "boolean" ? seat.isAvailable : true,
+          }))
+          .filter((seat: any) => seat.id && isValidUUID(seat.id));
+
+        if (normalizedSeats.length === 0) {
+          setSeatError(
+            "Seat map is not available for this trip yet. Please try again later."
+          );
+          setSeats([]);
+          return;
+        }
+
+        setSeats(normalizedSeats);
+      } catch (error) {
+        console.error("Seat map load error:", error);
+        setSeatError(
+          "Unable to load seat availability right now. Please try again later."
+        );
+        setSeats([]);
+      } finally {
+        setIsLoadingSeats(false);
+      }
+    };
+
+    loadSeats();
+  }, [tripData, isModalOpen]);
+
+  useEffect(() => {
+    if (seats.length === 0) {
+      setSelectedSeats([]);
+      return;
     }
 
-    setSeats(newSeats);
-  }, [tripData]);
+    setSelectedSeats((prev) =>
+      prev.filter((seatId) => seats.some((seat) => seat.id === seatId))
+    );
+  }, [seats]);
 
   // Restore booking data if user came back from login
   useEffect(() => {
@@ -362,6 +420,7 @@ const BookModal: React.FC<BookModalProps> = ({
             setNumberOfInfants(data.numberOfInfants || 0);
             setSelectedSeats(data.selectedSeats || []);
             if (data.passengers) {
+              skipPassengerSyncRef.current = true;
               setPassengers(data.passengers);
             }
 
@@ -426,19 +485,22 @@ const BookModal: React.FC<BookModalProps> = ({
 
   // Update passengers when adult/infant count changes
   useEffect(() => {
-    const newPassengers: Passenger[] = [];
-
-    // Add adult passengers only (infants don't need individual passenger forms)
-    for (let i = 0; i < numberOfAdults; i++) {
-      newPassengers.push({
-        type: "ADULT",
-        name: "",
-        passportNumberOrIdNumber: "",
-        files: [],
-      });
+    if (skipPassengerSyncRef.current) {
+      skipPassengerSyncRef.current = false;
+      return;
     }
 
-    setPassengers(newPassengers);
+    setPassengers((prev) => {
+      if (numberOfAdults === prev.length) {
+        return prev;
+      }
+
+      const nextPassengers: Passenger[] = [];
+      for (let i = 0; i < numberOfAdults; i++) {
+        nextPassengers.push(prev[i] ?? createEmptyPassenger());
+      }
+      return nextPassengers;
+    });
   }, [numberOfAdults]);
 
   // Handle seat selection when number of adults changes
@@ -484,7 +546,12 @@ const BookModal: React.FC<BookModalProps> = ({
   const isFormValid = () => {
     if (!bookerName || !bookerEmail || !bookerPhone) return false;
     if (phoneError || !validatePhone(bookerPhone)) return false;
-    if (selectedSeats.length !== numberOfAdults) return false;
+    if (seats.length === 0 || seatError) return false;
+    if (
+      selectedSeats.length !== numberOfAdults ||
+      selectedSeats.some((seatId) => !isValidUUID(seatId))
+    )
+      return false;
 
     // Check if all adult passengers have required info (files are optional)
     for (const passenger of passengers) {
@@ -497,6 +564,19 @@ const BookModal: React.FC<BookModalProps> = ({
   };
 
   const handleSeatClick = (seatId: string) => {
+    const seat = seats.find((s) => s.id === seatId);
+    if (!seat) return;
+    if (!seat.isAvailable) {
+      toast.error("This seat is no longer available.", { duration: 3000 });
+      return;
+    }
+    if (!isValidUUID(seatId)) {
+      toast.error("Seat information is invalid. Please reload and try again.", {
+        duration: 4000,
+      });
+      return;
+    }
+
     const totalNeeded = numberOfAdults; // Infants don't need separate seats
 
     if (selectedSeats.includes(seatId)) {
@@ -581,6 +661,22 @@ const BookModal: React.FC<BookModalProps> = ({
     }
   };
 
+  const handleRemovePassengerFile = (
+    passengerIndex: number,
+    fileIndex: number
+  ) => {
+    setPassengers((prev) =>
+      prev.map((passenger, idx) => {
+        if (idx !== passengerIndex) return passenger;
+        const files = Array.isArray(passenger.files)
+          ? [...passenger.files]
+          : [];
+        files.splice(fileIndex, 1);
+        return { ...passenger, files };
+      })
+    );
+  };
+
   const handleBooking = async () => {
     // Check if user is logged in
     const token = localStorage.getItem("authToken");
@@ -656,12 +752,40 @@ const BookModal: React.FC<BookModalProps> = ({
     setIsLoading(true);
 
     try {
+      if (!tripData?.id) {
+        toast.error(
+          "Trip details missing. Please close the modal and try again.",
+          {
+            duration: 4000,
+          }
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      if (seats.length === 0 || seatError) {
+        toast.error("Seat map not available. Please try again later.", {
+          duration: 4000,
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (selectedSeats.some((seatId) => !isValidUUID(seatId))) {
+        toast.error(
+          "Selected seats are invalid. Please reselect seats and try again.",
+          { duration: 4000 }
+        );
+        setIsLoading(false);
+        return;
+      }
+
       const apiUrl =
         process.env.NEXT_PUBLIC_API_URL || "https://api.stanlyegypt.com/api/v1";
 
       // Step 1: Create booking
       const bookingData = {
-        tripId: tripData?.id,
+        tripId: tripData.id,
         travelerName: bookerName,
         travelerEmail: bookerEmail,
         travelerPhone: bookerPhone,
@@ -1105,48 +1229,64 @@ const BookModal: React.FC<BookModalProps> = ({
                   </div>
 
                   <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 border-2 border-gray-100 shadow-sm">
-                    <div className="grid grid-cols-4 gap-2 sm:gap-3 max-w-sm sm:max-w-md mx-auto">
-                      {seats.map((seat: any) => (
-                        <button
-                          key={seat.id}
-                          onClick={() => handleSeatClick(seat.id)}
-                          disabled={!seat.isAvailable}
-                          className={`
-                            p-2 sm:p-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold border-2 transition-all duration-200 transform hover:scale-105
-                            ${
-                              !seat.isAvailable
-                                ? "bg-gray-200 text-gray-500 cursor-not-allowed border-gray-300"
-                                : selectedSeats.includes(seat.id)
-                                ? "bg-gradient-to-br from-[#179FDB] to-[#0f7ac3] text-white border-[#179FDB] shadow-lg"
-                                : "bg-white border-gray-300 hover:border-[#179FDB] hover:bg-blue-50 text-gray-700"
-                            }
-                          `}
-                        >
-                          {seat.seatNumber}
-                        </button>
-                      ))}
-                    </div>
+                    {isLoadingSeats ? (
+                      <div className="text-center py-6 text-sm text-gray-500">
+                        Loading seats...
+                      </div>
+                    ) : seatError ? (
+                      <div className="text-center py-6 text-sm text-red-600">
+                        {seatError}
+                      </div>
+                    ) : seats.length === 0 ? (
+                      <div className="text-center py-6 text-sm text-gray-500">
+                        Seat map is unavailable for this trip.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-4 gap-2 sm:gap-3 max-w-sm sm:max-w-md mx-auto">
+                        {seats.map((seat: any) => (
+                          <button
+                            key={seat.id}
+                            onClick={() => handleSeatClick(seat.id)}
+                            disabled={!seat.isAvailable}
+                            className={`
+                              p-2 sm:p-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold border-2 transition-all duration-200 transform hover:scale-105
+                              ${
+                                !seat.isAvailable
+                                  ? "bg-gray-200 text-gray-500 cursor-not-allowed border-gray-300"
+                                  : selectedSeats.includes(seat.id)
+                                  ? "bg-gradient-to-br from-[#179FDB] to-[#0f7ac3] text-white border-[#179FDB] shadow-lg"
+                                  : "bg-white border-gray-300 hover:border-[#179FDB] hover:bg-blue-50 text-gray-700"
+                              }
+                            `}
+                          >
+                            {seat.seatNumber}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-                    <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-6 mt-4 sm:mt-6 text-xs sm:text-sm">
-                      <div className="flex items-center gap-2 justify-center">
-                        <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white border-2 border-gray-300 rounded-lg"></div>
-                        <span className="font-medium text-gray-600">
-                          Available
-                        </span>
+                    {seats.length > 0 && !seatError ? (
+                      <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-6 mt-4 sm:mt-6 text-xs sm:text-sm">
+                        <div className="flex items-center gap-2 justify-center">
+                          <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white border-2 border-gray-300 rounded-lg"></div>
+                          <span className="font-medium text-gray-600">
+                            Available
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 justify-center">
+                          <div className="w-4 h-4 sm:w-5 sm:h-5 bg-gradient-to-br from-[#179FDB] to-[#0f7ac3] border-2 border-[#179FDB] rounded-lg"></div>
+                          <span className="font-medium text-gray-600">
+                            Selected
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 justify-center">
+                          <div className="w-4 h-4 sm:w-5 sm:h-5 bg-gray-200 border-2 border-gray-300 rounded-lg"></div>
+                          <span className="font-medium text-gray-600">
+                            Occupied
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 justify-center">
-                        <div className="w-4 h-4 sm:w-5 sm:h-5 bg-gradient-to-br from-[#179FDB] to-[#0f7ac3] border-2 border-[#179FDB] rounded-lg"></div>
-                        <span className="font-medium text-gray-600">
-                          Selected
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 justify-center">
-                        <div className="w-4 h-4 sm:w-5 sm:h-5 bg-gray-200 border-2 border-gray-300 rounded-lg"></div>
-                        <span className="font-medium text-gray-600">
-                          Occupied
-                        </span>
-                      </div>
-                    </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1340,7 +1480,7 @@ const BookModal: React.FC<BookModalProps> = ({
                               type="text"
                               placeholder={
                                 passenger.type === "ADULT"
-                                  ? "Passport Number"
+                                  ? "Passport Number or ID Number"
                                   : "ID Number"
                               }
                               value={passenger.passportNumberOrIdNumber}
@@ -1369,6 +1509,38 @@ const BookModal: React.FC<BookModalProps> = ({
                                 onChange={(e) => handleFileUpload(index, e)}
                                 className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 outline-none transition-all duration-200 font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
                               />
+                              {passenger.files?.length ? (
+                                <div className="mt-3 space-y-2">
+                                  <p className="text-xs text-gray-500">
+                                    Uploaded files stay attached even if you
+                                    return after logging in again.
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {passenger.files.map((file, fileIdx) => (
+                                      <span
+                                        key={`${file.originalFilename}-${fileIdx}`}
+                                        className="flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 text-orange-700 text-xs font-semibold border border-orange-200"
+                                      >
+                                        {file.originalFilename ||
+                                          "Uploaded document"}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleRemovePassengerFile(
+                                              index,
+                                              fileIdx
+                                            )
+                                          }
+                                          className="text-orange-500 hover:text-orange-700"
+                                          aria-label="Remove file"
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </div>

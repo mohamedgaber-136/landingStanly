@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import Navbar from "@/components/Navbar";
 import TripCard, { TripCardRef } from "@/components/TripCard";
 import Image from "next/image";
 import toast from "react-hot-toast";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/dist/style.css";
 
 // Minimal Trip type used in this page
 interface Trip {
@@ -23,6 +25,15 @@ interface Trip {
 
 const locations = ["Siwa", "Cairo"];
 
+const DEFAULT_SEARCH_FILTERS = {
+  airline: "",
+  minPrice: "0",
+  maxPrice: "10000",
+  minAvailableSeats: "1",
+  limit: "50",
+  offset: "0",
+};
+
 export default function Home() {
   const [searchResults, setSearchResults] = useState<Trip[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -33,6 +44,168 @@ export default function Home() {
   const [to, setTo] = useState(locations[1]);
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>("");
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
+  const [swapSuggestion, setSwapSuggestion] = useState<{
+    message: string;
+    trips: Trip[];
+  } | null>(null);
+  const availableDateSet = useMemo(
+    () => new Set(availableDates),
+    [availableDates]
+  );
+  const yearStartDate = useMemo(
+    () => new Date(calendarYear, 0, 1),
+    [calendarYear]
+  );
+  const yearEndDate = useMemo(
+    () => new Date(calendarYear, 11, 31),
+    [calendarYear]
+  );
+  const today = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return now;
+  }, []);
+  const disabledDays = useMemo(
+    () => [
+      { before: today },
+      { before: yearStartDate, after: yearEndDate },
+      (date: Date) => !availableDateSet.has(dateToISO(date)),
+    ],
+    [availableDateSet, today, yearStartDate, yearEndDate]
+  );
+
+  const getYearBoundaries = (year: number) => {
+    const startUtc = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
+    const endUtc = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+    return { startUtc, endUtc };
+  };
+
+  const dateToISO = (date: Date) => {
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, "0");
+    const day = `${date.getDate()}`.padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseISODate = (value: string) => {
+    if (!value) return undefined;
+    const [year, month, day] = value.split("-").map((part) => Number(part));
+    if (!year || !month || !day) return undefined;
+    return new Date(year, month - 1, day);
+  };
+
+  const toDayBoundaryISO = (
+    isoDate: string,
+    boundary: "start" | "end" = "start"
+  ) => {
+    const date = parseISODate(isoDate);
+    if (!date) return "";
+    if (boundary === "start") {
+      date.setHours(0, 0, 0, 0);
+    } else {
+      date.setHours(23, 59, 59, 999);
+    }
+    return date.toISOString();
+  };
+
+  const formatCalendarDate = (isoDate: string) => {
+    try {
+      return new Date(isoDate).toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch (error) {
+      return isoDate;
+    }
+  };
+
+  useEffect(() => {
+    const fetchAvailableDates = async () => {
+      setIsLoadingCalendar(true);
+      setCalendarError(null);
+      try {
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL ||
+          "https://api.stanlyegypt.com/api/v1";
+        const { startUtc, endUtc } = getYearBoundaries(calendarYear);
+        const params = new URLSearchParams({
+          from: dateToISO(startUtc),
+          to: dateToISO(endUtc),
+        });
+
+        const response = await fetch(
+          `${apiUrl}/trips/calendar?${params.toString()}`
+        );
+        if (!response.ok) {
+          throw new Error("Failed to load available dates");
+        }
+
+        const data = await response.json();
+        const dates = Array.isArray(data)
+          ? data
+              .map((entry: any) => entry?.departureDate)
+              .filter((d: string | undefined): d is string => Boolean(d))
+              .sort(
+                (a: string, b: string) =>
+                  new Date(a).getTime() - new Date(b).getTime()
+              )
+          : [];
+
+        setAvailableDates(dates);
+
+        if (dates.length === 0) {
+          setDateRange({ start: "", end: "" });
+          setSelectedCalendarDate("");
+          return;
+        }
+
+        setDateRange((prev) => {
+          const nextStart =
+            prev.start && dates.includes(prev.start) ? prev.start : dates[0];
+          const nextEnd =
+            prev.end && dates.includes(prev.end) ? prev.end : nextStart;
+          setSelectedCalendarDate(nextStart);
+          return { start: nextStart, end: nextEnd };
+        });
+      } catch (error) {
+        console.error("Calendar fetch error:", error);
+        setCalendarError("Unable to load available dates right now.");
+        setAvailableDates([]);
+      } finally {
+        setIsLoadingCalendar(false);
+      }
+    };
+
+    fetchAvailableDates();
+  }, [from, to, calendarYear]);
+
+  useEffect(() => {
+    const now = new Date();
+    const nextYearStart = new Date(now.getFullYear() + 1, 0, 1);
+    const timeoutMs = nextYearStart.getTime() - now.getTime();
+
+    const timer = setTimeout(() => {
+      setCalendarYear(new Date().getFullYear());
+    }, Math.max(timeoutMs, 0));
+
+    return () => clearTimeout(timer);
+  }, [calendarYear]);
+
+  useEffect(() => {
+    const parsed = parseISODate(selectedCalendarDate);
+    if (parsed) {
+      setCalendarMonth(parsed);
+    }
+  }, [selectedCalendarDate]);
 
   // Handle payment success redirect from Paymob
   useEffect(() => {
@@ -389,13 +562,8 @@ export default function Home() {
     }
   }, [searchResults]);
 
-  const handleSearchResults = (results: any[]) => {
-    setIsSearching(false);
-    setSearchError(null);
-    setHasSearched(true);
-    // Map API results to TripCard props format
-    const mappedResults: Trip[] = results.map((trip: any, idx: number) => {
-      // Accept both full and minimal trip objects
+  const mapTripsForDisplay = (results: any[]): Trip[] => {
+    return results.map((trip: any, idx: number) => {
       const departureDate = trip.departureTime
         ? new Date(trip.departureTime).toLocaleDateString()
         : trip.departure
@@ -404,7 +572,7 @@ export default function Home() {
       return {
         id:
           trip.id ||
-          `${trip.from}-${trip.to}-${
+          `${trip.from || trip.origin}-${trip.to || trip.destination}-${
             trip.departureTime || trip.departure || idx
           }`,
         from: trip.from || trip.origin || "",
@@ -422,8 +590,15 @@ export default function Home() {
         currency: trip.currency,
       };
     });
+  };
+
+  const handleSearchResults = (results: any[]) => {
+    setIsSearching(false);
+    setSearchError(null);
+    setHasSearched(true);
+    setSwapSuggestion(null);
+    const mappedResults = mapTripsForDisplay(results);
     setSearchResults(mappedResults);
-    // set default selected date to first result date (if any)
     if (mappedResults.length > 0) {
       setSelectedDate(mappedResults[0].departure);
     }
@@ -434,11 +609,38 @@ export default function Home() {
     setSearchError(error);
     setSearchResults([]);
     setHasSearched(true);
+    setSwapSuggestion(null);
   };
 
   const handleSearchStart = () => {
     setIsSearching(true);
     setSearchError(null);
+  };
+
+  const handleOpenCalendar = () => {
+    const selected = parseISODate(selectedCalendarDate);
+    const firstAvailable = availableDates.length
+      ? parseISODate(availableDates[0])
+      : undefined;
+    const baseDate = selected || firstAvailable || today;
+    setCalendarMonth(baseDate);
+    setIsCalendarModalOpen(true);
+  };
+
+  const handleCloseCalendar = () => {
+    setIsCalendarModalOpen(false);
+  };
+
+  const handleCalendarSelect = (day?: Date) => {
+    if (!day) return;
+    const normalized = new Date(day);
+    normalized.setHours(0, 0, 0, 0);
+    if (normalized < today) return;
+    const iso = dateToISO(normalized);
+    if (!availableDateSet.has(iso)) return;
+    setSelectedCalendarDate(iso);
+    setDateRange({ start: iso, end: iso });
+    setIsCalendarModalOpen(false);
   };
 
   // Form submit handler for the BUY TICKET form
@@ -447,54 +649,115 @@ export default function Home() {
     // start
     setIsSearching(true);
     setSearchError(null);
+    setSwapSuggestion(null);
 
     try {
       // Use provided dates or sensible defaults
       let start = dateRange.start;
       let end = dateRange.end;
+      if (!start && selectedCalendarDate) {
+        start = selectedCalendarDate;
+      }
+
+      if (!end && selectedCalendarDate) {
+        end = selectedCalendarDate;
+      }
+
       if (!start) start = new Date().toISOString().split("T")[0];
       if (!end)
         end = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
           .toISOString()
           .split("T")[0];
 
-      const departureFrom = `${start}T00:00:00.000Z`;
-      const departureTo = `${end}T23:59:59.000Z`;
+      const departureFrom =
+        toDayBoundaryISO(start, "start") || `${start}T00:00:00.000Z`;
+      const departureTo =
+        toDayBoundaryISO(end, "end") || `${end}T23:59:59.000Z`;
 
-      const arrivalFromDate = new Date(start);
-      arrivalFromDate.setDate(arrivalFromDate.getDate() + 1);
-      const arrivalToDate = new Date(end);
-      arrivalToDate.setDate(arrivalToDate.getDate() + 3);
-
-      const arrivalFrom = arrivalFromDate.toISOString().replace(".000Z", "Z");
-      const arrivalTo = arrivalToDate.toISOString().replace(".000Z", "Z");
-
-      const params = new URLSearchParams({
-        from,
-        to,
-        departureFrom,
-        departureTo,
-        arrivalFrom,
-        arrivalTo,
-        offset: "0",
-      });
+      const arrivalFrom = departureFrom;
+      const arrivalTo = departureTo;
 
       const apiUrl =
         process.env.NEXT_PUBLIC_API_URL || "https://api.stanlyegypt.com/api/v1";
-      const response = await fetch(`${apiUrl}/trips/?${params.toString()}`);
 
-      if (!response.ok) throw new Error("Failed to fetch trips");
+      const buildSearchParams = (routeFrom: string, routeTo: string) => {
+        const params = new URLSearchParams({
+          from: routeFrom,
+          to: routeTo,
+          departureFrom,
+          departureTo,
+          arrivalFrom,
+          arrivalTo,
+          minPrice: DEFAULT_SEARCH_FILTERS.minPrice,
+          maxPrice: DEFAULT_SEARCH_FILTERS.maxPrice,
+          minAvailableSeats: DEFAULT_SEARCH_FILTERS.minAvailableSeats,
+          limit: DEFAULT_SEARCH_FILTERS.limit,
+          offset: DEFAULT_SEARCH_FILTERS.offset,
+        });
 
-      const data = await response.json();
-      // Accept data.data (API), data.trips, or data as array
-      const tripsArr = Array.isArray(data.data)
-        ? data.data
-        : Array.isArray(data.trips)
-        ? data.trips
-        : Array.isArray(data)
-        ? data
-        : [];
-      handleSearchResults(tripsArr);
+        if (DEFAULT_SEARCH_FILTERS.airline) {
+          params.set("airline", DEFAULT_SEARCH_FILTERS.airline);
+        }
+
+        return params;
+      };
+
+      const fetchTripsForRoute = async (routeFrom: string, routeTo: string) => {
+        const params = buildSearchParams(routeFrom, routeTo);
+        const response = await fetch(
+          `${apiUrl}/trips/search?${params.toString()}`
+        );
+
+        if (!response.ok) throw new Error("Failed to fetch trips");
+
+        const data = await response.json();
+        return Array.isArray(data.data)
+          ? data.data
+          : Array.isArray(data.trips)
+          ? data.trips
+          : Array.isArray(data)
+          ? data
+          : [];
+      };
+
+      const formatSelectedDateLabel = () => {
+        if (start && end) {
+          if (start === end) {
+            return formatCalendarDate(start);
+          }
+          return `${formatCalendarDate(start)} - ${formatCalendarDate(end)}`;
+        }
+        if (start) {
+          return formatCalendarDate(start);
+        }
+        if (selectedCalendarDate) {
+          return formatCalendarDate(selectedCalendarDate);
+        }
+        return "the selected date";
+      };
+
+      const primaryTrips = await fetchTripsForRoute(from, to);
+      if (primaryTrips.length > 0) {
+        handleSearchResults(primaryTrips);
+        return;
+      }
+
+      const reversedTrips = await fetchTripsForRoute(to, from);
+      if (reversedTrips.length > 0) {
+        setIsSearching(false);
+        setSearchError(null);
+        setHasSearched(true);
+        setSearchResults([]);
+        const mappedReversedTrips = mapTripsForDisplay(reversedTrips);
+        const dateLabel = formatSelectedDateLabel();
+        setSwapSuggestion({
+          message: `There are no trips from ${from} to ${to} for ${dateLabel}, but we found trips from ${to} to ${from} on the same date.`,
+          trips: mappedReversedTrips,
+        });
+        return;
+      }
+
+      handleSearchResults([]);
     } catch (err: any) {
       console.error("Search error:", err);
       handleSearchError(err?.message || "Failed to search trips");
@@ -502,132 +765,160 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#114577]">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-auto p-8 flex flex-col gap-8">
-        <div className="flex flex-col md:flex-row gap-8">
-          <div className="flex-1 flex items-center justify-center">
-            <Image
-              src="/siwa.jpg"
-              width={400}
-              height={300}
-              alt="Siwa"
-              className="rounded-xl object-cover"
-            />
+    <>
+      <div className="min-h-screen flex items-center justify-center bg-[#114577]">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-auto p-8 flex flex-col gap-8">
+          <div className="flex flex-col md:flex-row gap-8">
+            <div className="flex-1 flex items-center justify-center">
+              <Image
+                src="/siwa.jpg"
+                width={400}
+                height={300}
+                alt="Siwa"
+                className="rounded-xl object-cover"
+              />
+            </div>
+            <div className="flex-1 flex flex-col gap-4 justify-center">
+              <h2 className="text-2xl font-bold text-[#114577] mb-2">
+                Fly to {to}
+              </h2>
+              <div className="text-gray-700 mb-2">
+                <span className="font-semibold">Coach Type</span> : AC
+              </div>
+              <div className="text-gray-700 mb-2">
+                <span className="font-semibold">Passenger Capacity</span> : 44
+              </div>
+              <div className="flex gap-4 mb-2">
+                <div className="bg-gray-100 rounded-lg p-2 flex-1">
+                  <div className="font-semibold text-[#114577]">Boarding</div>
+                  <div className="text-sm text-gray-600">
+                    Siwa Oasis | North Airport (2:00 pm)
+                  </div>
+                </div>
+                <div className="bg-gray-100 rounded-lg p-2 flex-1">
+                  <div className="font-semibold text-[#114577]">Dropping</div>
+                  <div className="text-sm text-gray-600">
+                    Cairo | East Airport (3:30 am)
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex-1 flex flex-col gap-4 justify-center">
-            <h2 className="text-2xl font-bold text-[#114577] mb-2">
-              Fly to {to}
-            </h2>
-            <div className="text-gray-700 mb-2">
-              <span className="font-semibold">Coach Type</span> : AC
-            </div>
-            <div className="text-gray-700 mb-2">
-              <span className="font-semibold">Passenger Capacity</span> : 44
-            </div>
-            <div className="flex gap-4 mb-2">
-              <div className="bg-gray-100 rounded-lg p-2 flex-1">
-                <div className="font-semibold text-[#114577]">Boarding</div>
-                <div className="text-sm text-gray-600">
-                  Siwa Oasis | North Airport (2:00 pm)
+          <div className="bg-white rounded-xl shadow p-6 mt-4">
+            <h3 className="text-lg font-bold text-[#114577] mb-4">
+              BUY TICKET
+            </h3>
+            <form className="w-full" onSubmit={handleSubmit}>
+              <div className="w-full">
+                <div className="flex flex-col md:flex-row gap-4 md:gap-6 w-full">
+                  <div className="flex flex-col w-full md:w-1/4">
+                    <label className="font-semibold mb-1">From</label>
+                    <select
+                      className="p-2 rounded-lg border border-gray-300"
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                    >
+                      {locations.map((loc) => (
+                        <option key={loc} value={loc}>
+                          {loc}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col w-full md:w-1/4">
+                    <label className="font-semibold mb-1">To</label>
+                    <select
+                      className="p-2 rounded-lg border border-gray-300"
+                      value={to}
+                      onChange={(e) => setTo(e.target.value)}
+                    >
+                      {locations.map((loc) => (
+                        <option key={loc} value={loc}>
+                          {loc}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col w-full md:w-1/2">
+                    <label className="font-semibold mb-1">Selected Date</label>
+                    <button
+                      type="button"
+                      onClick={handleOpenCalendar}
+                      className="p-3 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-700 min-h-12 flex items-center justify-between text-left hover:border-[#179FDB] transition"
+                      aria-haspopup="dialog"
+                      aria-expanded={isCalendarModalOpen}
+                    >
+                      <span>
+                        {selectedCalendarDate
+                          ? formatCalendarDate(selectedCalendarDate)
+                          : "Pick a date from the calendar to continue."}
+                      </span>
+                      <span className="text-xs text-[#179FDB] font-semibold">
+                        {selectedCalendarDate ? "Change" : "Select"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <label className="font-semibold mb-2 block">
+                    Choose An Available Date
+                  </label>
+                  <div className="rounded-xl border border-gray-200 p-4 bg-white">
+                    {isLoadingCalendar ? (
+                      <p className="text-sm text-gray-500">Loading calendar…</p>
+                    ) : availableDates.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No departures listed for this year. Try another route.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-gray-500">
+                        {selectedCalendarDate
+                          ? `Selected date: ${formatCalendarDate(
+                              selectedCalendarDate
+                            )}. Use the button above to change it.`
+                          : "Click the selected date above to open the calendar modal."}
+                      </p>
+                    )}
+                    {calendarError ? (
+                      <p className="text-sm text-red-500 mt-2">
+                        {calendarError}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="flex justify-end mt-3 w-full">
+                  <button
+                    type="submit"
+                    disabled={isSearching}
+                    className={`bg-[#179FDB] text-white font-semibold px-6 py-3 rounded-xl hover:bg-[#0f7ac3] transition w-full md:w-auto md:min-w-[120px] ${
+                      isSearching ? "opacity-60 cursor-not-allowed" : ""
+                    }`}
+                  >
+                    {isSearching ? "Searching..." : "Search"}
+                  </button>
                 </div>
               </div>
-              <div className="bg-gray-100 rounded-lg p-2 flex-1">
-                <div className="font-semibold text-[#114577]">Dropping</div>
-                <div className="text-sm text-gray-600">
-                  Cairo | East Airport (3:30 am)
-                </div>
-              </div>
-            </div>
+            </form>
           </div>
-        </div>
-        <div className="bg-white rounded-xl shadow p-6 mt-4">
-          <h3 className="text-lg font-bold text-[#114577] mb-4">BUY TICKET</h3>
-          <form className="w-full" onSubmit={handleSubmit}>
-            <div className="w-full">
-              <div className="flex flex-col md:flex-row gap-4 md:gap-6 w-full">
-                <div className="flex flex-col w-full md:w-1/4">
-                  <label className="font-semibold mb-1">From</label>
-                  <select
-                    className="p-2 rounded-lg border border-gray-300"
-                    value={from}
-                    onChange={(e) => setFrom(e.target.value)}
-                  >
-                    {locations.map((loc) => (
-                      <option key={loc} value={loc}>
-                        {loc}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex flex-col w-full md:w-1/4">
-                  <label className="font-semibold mb-1">To</label>
-                  <select
-                    className="p-2 rounded-lg border border-gray-300"
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                  >
-                    {locations.map((loc) => (
-                      <option key={loc} value={loc}>
-                        {loc}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex flex-col w-full md:w-1/4">
-                  <label className="font-semibold mb-1">Start Date</label>
-                  <input
-                    type="date"
-                    className="p-2 rounded-lg border border-gray-300"
-                    value={dateRange.start}
-                    onChange={(e) =>
-                      setDateRange({ ...dateRange, start: e.target.value })
-                    }
-                  />
-                </div>
-
-                <div className="flex flex-col w-full md:w-1/4">
-                  <label className="font-semibold mb-1">End Date</label>
-                  <input
-                    type="date"
-                    className="p-2 rounded-lg border border-gray-300"
-                    value={dateRange.end}
-                    onChange={(e) =>
-                      setDateRange({ ...dateRange, end: e.target.value })
-                    }
-                  />
-                </div>
+          {/* Results area */}
+          <div className="mt-4 w-full">
+            {searchResults.length === 0 && hasSearched ? (
+              <div className="bg-white rounded-lg p-6 text-center text-gray-600">
+                No trips found for the selected dates.
               </div>
+            ) : null}
 
-              <div className="flex justify-end mt-3 w-full">
-                <button
-                  type="submit"
-                  disabled={isSearching}
-                  className={`bg-[#179FDB] text-white font-semibold px-6 py-3 rounded-xl hover:bg-[#0f7ac3] transition w-full md:w-auto md:min-w-[120px] ${
-                    isSearching ? "opacity-60 cursor-not-allowed" : ""
-                  }`}
-                >
-                  {isSearching ? "Searching..." : "Search"}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-        {/* Results area */}
-        <div className="mt-4 w-full">
-          {searchResults.length === 0 && hasSearched ? (
-            <div className="bg-white rounded-lg p-6 text-center text-gray-600">
-              No trips found for the selected dates.
-            </div>
-          ) : null}
-
-          {searchResults.length > 0 && (
-            <div className="bg-white rounded-lg shadow p-4 mt-4">
-              {/* Date tabs */}
-              <div className="flex gap-3 mb-4 flex-wrap">
-                {Array.from(new Set(searchResults.map((t) => t.departure))).map(
-                  (d) => (
+            {searchResults.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-4 mt-4">
+                {/* Date tabs */}
+                <div className="flex gap-3 mb-4 flex-wrap">
+                  {Array.from(
+                    new Set(searchResults.map((t) => t.departure))
+                  ).map((d) => (
                     <button
                       key={d}
                       onClick={() => setSelectedDate(d)}
@@ -639,26 +930,52 @@ export default function Home() {
                     >
                       {d}
                     </button>
-                  )
-                )}
-              </div>
-
-              {/* Header row */}
-              <div className="flex items-center justify-between border-t pt-3">
-                <div className="text-sm text-gray-600">
-                  {searchResults[0]?.from} ➜ {searchResults[0]?.to}
+                  ))}
                 </div>
-                <div className="text-sm text-gray-600">{selectedDate}</div>
-              </div>
 
-              {/* List of trip cards for selectedDate */}
-              <div className="mt-4 flex flex-col gap-4">
-                {searchResults
-                  .filter((t) =>
-                    selectedDate ? t.departure === selectedDate : true
-                  )
-                  .map((trip) => (
-                    <div key={trip.id} className="border-t pt-4">
+                {/* Header row */}
+                <div className="flex items-center justify-between border-t pt-3">
+                  <div className="text-sm text-gray-600">
+                    {searchResults[0]?.from} ➜ {searchResults[0]?.to}
+                  </div>
+                  <div className="text-sm text-gray-600">{selectedDate}</div>
+                </div>
+
+                {/* List of trip cards for selectedDate */}
+                <div className="mt-4 flex flex-col gap-4">
+                  {searchResults
+                    .filter((t) =>
+                      selectedDate ? t.departure === selectedDate : true
+                    )
+                    .map((trip) => (
+                      <div key={trip.id} className="border-t pt-4">
+                        <TripCard
+                          ref={(r) => {
+                            tripCardRefs.current[trip.id] = r as TripCardRef;
+                          }}
+                          from={trip.from}
+                          to={trip.to}
+                          departure={trip.departure}
+                          availableSeats={trip.availableSeats}
+                          flightNumber={trip.flightNumber}
+                          price={trip.price}
+                          image={trip.image}
+                          tripData={trip}
+                        />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {swapSuggestion ? (
+              <div className="bg-[#e6f3fb] border border-[#b7e0f8] rounded-lg p-5 mt-4">
+                <p className="text-sm font-semibold text-[#0f4c81]">
+                  {swapSuggestion.message}
+                </p>
+                <div className="mt-4 flex flex-col gap-4">
+                  {swapSuggestion.trips.map((trip) => (
+                    <div key={`swap-${trip.id}`} className="border-t pt-4">
                       <TripCard
                         ref={(r) => {
                           tripCardRefs.current[trip.id] = r as TripCardRef;
@@ -674,11 +991,62 @@ export default function Home() {
                       />
                     </div>
                   ))}
+                </div>
               </div>
-            </div>
-          )}
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
+      {isCalendarModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={handleCloseCalendar}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-lg font-semibold text-[#114577]">
+                Choose An Available Date
+              </h4>
+              <button
+                type="button"
+                onClick={handleCloseCalendar}
+                className="text-sm font-semibold text-gray-500 hover:text-gray-700"
+                aria-label="Close calendar"
+              >
+                Close
+              </button>
+            </div>
+            {isLoadingCalendar ? (
+              <p className="text-sm text-gray-500">Loading calendar…</p>
+            ) : availableDates.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No departures listed for this year. Try another route.
+              </p>
+            ) : (
+              <DayPicker
+                mode="single"
+                selected={parseISODate(selectedCalendarDate)}
+                onSelect={handleCalendarSelect}
+                fromDate={yearStartDate}
+                toDate={yearEndDate}
+                showOutsideDays
+                disabled={disabledDays}
+                month={calendarMonth}
+                onMonthChange={setCalendarMonth}
+                initialFocus
+              />
+            )}
+            {calendarError ? (
+              <p className="text-sm text-red-500 mt-4">{calendarError}</p>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

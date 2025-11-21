@@ -100,7 +100,7 @@ const TripCard = forwardRef<TripCardRef, TripCardProps>(
 
           {/* Price & Book Button */}
           <div className="flex justify-between items-center mt-auto">
-            <div className="text-lg font-bold text-[#179FDB]">{price}</div>
+            {/* <div className="text-lg font-bold text-[#179FDB]">{price}</div> */}
             <button
               onClick={() => (availableSeats > 0 ? setIsModalOpen(true) : null)}
               disabled={availableSeats === 0}
