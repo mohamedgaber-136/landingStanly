@@ -1,6 +1,12 @@
 "use client";
 import { useRouter } from "next/navigation";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import toast from "react-hot-toast";
 import {
   generateInvoicePDF,
@@ -29,6 +35,8 @@ interface BookModalProps {
   availableSeats: number;
   tripData?: any;
 }
+
+const DISPLAY_CURRENCY = "EGP";
 
 const BookModal: React.FC<BookModalProps> = ({
   isModalOpen,
@@ -70,17 +78,54 @@ const BookModal: React.FC<BookModalProps> = ({
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
   const [invoiceData, setInvoiceData] = useState<BookingData | null>(null);
   const skipPassengerSyncRef = useRef(false);
+  const [selectedTripType, setSelectedTripType] = useState<
+    "ONE_WAY" | "ROUND_TRIP"
+  >("ONE_WAY");
+  const tripSeatMap = useMemo(() => {
+    if (Array.isArray(tripData?.seatMap)) {
+      return tripData.seatMap;
+    }
+    if (Array.isArray(tripData?.data?.seatMap)) {
+      return tripData.data.seatMap;
+    }
+    return [];
+  }, [tripData]);
+  const pickSeatPrice = useCallback(
+    (seat: any, tripType: "ONE_WAY" | "ROUND_TRIP") => {
+      if (!seat) return undefined;
+      const primary =
+        tripType === "ROUND_TRIP"
+          ? parsePriceValue(seat?.roundTripBasePrice)
+          : parsePriceValue(seat?.oneWayBasePrice);
+      const secondary =
+        tripType === "ROUND_TRIP"
+          ? parsePriceValue(seat?.oneWayBasePrice)
+          : parsePriceValue(seat?.roundTripBasePrice);
+      return (
+        primary ??
+        parsePriceValue(seat?.effectivePrice) ??
+        parsePriceValue(seat?.seatPrice) ??
+        secondary
+      );
+    },
+    [parsePriceValue]
+  );
   const formatSeatPrice = useCallback(
     (seat?: any) => {
-      const currency = seat?.currency || tripData?.currency || "EGP";
+      const seatCurrency = DISPLAY_CURRENCY;
       const formatAmount = (value?: number) =>
-        typeof value === "number" ? `${currency} ${value}` : `${currency} —`;
+        typeof value === "number"
+          ? `${value.toLocaleString(undefined, {
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 2,
+            })} ${seatCurrency}`
+          : `— ${seatCurrency}`;
       const fallbackOneWay =
-        parsePriceValue(seat?.oneWayBasePrice) ??
+        pickSeatPrice(seat, "ONE_WAY") ??
         parsePriceValue(tripData?.oneWayBasePrice) ??
         parsePriceValue(tripData?.basePrice);
       const fallbackRoundTrip =
-        parsePriceValue(seat?.roundTripBasePrice) ??
+        pickSeatPrice(seat, "ROUND_TRIP") ??
         parsePriceValue(tripData?.roundTripBasePrice) ??
         parsePriceValue(tripData?.basePrice);
       return {
@@ -89,13 +134,316 @@ const BookModal: React.FC<BookModalProps> = ({
       };
     },
     [
+      pickSeatPrice,
+      tripData?.basePrice,
       tripData?.oneWayBasePrice,
       tripData?.roundTripBasePrice,
-      tripData?.basePrice,
-      tripData?.currency,
       parsePriceValue,
     ]
   );
+  const seatOneWayFallback = useMemo(() => {
+    const seatWithPrice = seats.find(
+      (seat) => pickSeatPrice(seat, "ONE_WAY") !== undefined
+    );
+    return seatWithPrice ? pickSeatPrice(seatWithPrice, "ONE_WAY") : undefined;
+  }, [pickSeatPrice, seats]);
+  const seatRoundTripFallback = useMemo(() => {
+    const seatWithPrice = seats.find(
+      (seat) => pickSeatPrice(seat, "ROUND_TRIP") !== undefined
+    );
+    return seatWithPrice
+      ? pickSeatPrice(seatWithPrice, "ROUND_TRIP")
+      : undefined;
+  }, [pickSeatPrice, seats]);
+  const tripSeatFallbacks = useMemo(() => {
+    const compute = (tripType: "ONE_WAY" | "ROUND_TRIP") => {
+      for (const seat of tripSeatMap) {
+        const price = pickSeatPrice(seat, tripType);
+        if (price !== undefined) {
+          return price;
+        }
+      }
+      return undefined;
+    };
+    return {
+      oneWay: compute("ONE_WAY"),
+      roundTrip: compute("ROUND_TRIP"),
+    };
+  }, [pickSeatPrice, tripSeatMap]);
+  const currency = DISPLAY_CURRENCY;
+  const labelPriceFallbacks = useMemo(() => {
+    if (typeof price !== "string" || price.trim().length === 0) {
+      return { oneWay: undefined, roundTrip: undefined };
+    }
+
+    const normalized = price.replace(/,/g, "");
+    const extractValue = (pattern: RegExp) => {
+      const match = normalized.match(pattern);
+      if (!match || match.length < 2) {
+        return undefined;
+      }
+      return parsePriceValue(match[1]);
+    };
+
+    let oneWay = extractValue(/one\s*way[^0-9]*([0-9]+(?:\.\d+)?)/i);
+    let roundTrip = extractValue(/round\s*trip[^0-9]*([0-9]+(?:\.\d+)?)/i);
+
+    if (oneWay === undefined || roundTrip === undefined) {
+      const numberMatches = normalized.match(/([0-9]+(?:\.\d+)?)/g) || [];
+      const numericValues = numberMatches
+        .map((value) => parsePriceValue(value))
+        .filter((value): value is number => typeof value === "number");
+
+      if (oneWay === undefined) {
+        oneWay = numericValues[0];
+      }
+      if (roundTrip === undefined) {
+        roundTrip = numericValues[1] ?? numericValues[0];
+      }
+    }
+
+    return { oneWay, roundTrip };
+  }, [price, parsePriceValue]);
+  const formatCurrencyValue = useCallback(
+    (value?: number) =>
+      typeof value === "number"
+        ? `${value.toLocaleString(undefined, {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2,
+          })} ${currency}`
+        : `— ${currency}`,
+    [currency]
+  );
+  const baseTripPrice = useMemo(
+    () => parsePriceValue(tripData?.basePrice),
+    [tripData?.basePrice, parsePriceValue]
+  );
+  const tripOneWayFallback = tripSeatFallbacks.oneWay;
+  const tripRoundTripFallback = tripSeatFallbacks.roundTrip;
+  const labelOneWayFallback = labelPriceFallbacks.oneWay;
+  const labelRoundTripFallback = labelPriceFallbacks.roundTrip;
+  const oneWayPrice = useMemo(
+    () =>
+      parsePriceValue(tripData?.oneWayBasePrice) ??
+      labelOneWayFallback ??
+      tripOneWayFallback ??
+      seatOneWayFallback ??
+      baseTripPrice,
+    [
+      tripData?.oneWayBasePrice,
+      labelOneWayFallback,
+      tripOneWayFallback,
+      seatOneWayFallback,
+      baseTripPrice,
+      parsePriceValue,
+    ]
+  );
+  const roundTripPrice = useMemo(
+    () =>
+      parsePriceValue(tripData?.roundTripBasePrice) ??
+      labelRoundTripFallback ??
+      tripRoundTripFallback ??
+      seatRoundTripFallback ??
+      baseTripPrice,
+    [
+      tripData?.roundTripBasePrice,
+      labelRoundTripFallback,
+      tripRoundTripFallback,
+      seatRoundTripFallback,
+      baseTripPrice,
+      parsePriceValue,
+    ]
+  );
+  const selectedPriceValue =
+    selectedTripType === "ROUND_TRIP" ? roundTripPrice : oneWayPrice;
+  const selectedPriceLabel = useMemo(
+    () => formatCurrencyValue(selectedPriceValue),
+    [formatCurrencyValue, selectedPriceValue]
+  );
+  const infantPriceValue = useMemo(
+    () => parsePriceValue(tripData?.infantPrice),
+    [tripData?.infantPrice, parsePriceValue]
+  );
+  const fallbackSeatPrice = useMemo(() => {
+    const seatTypeFallback =
+      selectedTripType === "ROUND_TRIP"
+        ? tripRoundTripFallback ?? seatRoundTripFallback
+        : tripOneWayFallback ?? seatOneWayFallback;
+    return selectedPriceValue ?? seatTypeFallback ?? baseTripPrice ?? 0;
+  }, [
+    baseTripPrice,
+    seatOneWayFallback,
+    seatRoundTripFallback,
+    selectedPriceValue,
+    selectedTripType,
+    tripOneWayFallback,
+    tripRoundTripFallback,
+  ]);
+  const seatPricingSummary = useMemo(() => {
+    let total = 0;
+    let seatsMissingPrice = 0;
+
+    selectedSeats.forEach((seatId) => {
+      const seat = seats.find((s) => s.id === seatId);
+      if (!seat) {
+        seatsMissingPrice += 1;
+        return;
+      }
+
+      const seatPrice = pickSeatPrice(seat, selectedTripType);
+
+      if (typeof seatPrice === "number" && Number.isFinite(seatPrice)) {
+        total += seatPrice;
+      } else {
+        seatsMissingPrice += 1;
+      }
+    });
+
+    return { total, seatsMissingPrice };
+  }, [pickSeatPrice, selectedSeats, seats, selectedTripType]);
+  const seatTotal = useMemo(() => {
+    if (selectedSeats.length > 0) {
+      const { total, seatsMissingPrice } = seatPricingSummary;
+      const fallbackContribution = seatsMissingPrice * fallbackSeatPrice;
+      return total + fallbackContribution;
+    }
+
+    return fallbackSeatPrice * Math.max(numberOfAdults, 1);
+  }, [
+    fallbackSeatPrice,
+    numberOfAdults,
+    seatPricingSummary,
+    selectedSeats.length,
+  ]);
+  const infantsTotal = useMemo(() => {
+    if (!infantPriceValue || numberOfInfants === 0) {
+      return 0;
+    }
+    return infantPriceValue * numberOfInfants;
+  }, [infantPriceValue, numberOfInfants]);
+  const computedTotalAmount = useMemo(
+    () => (seatTotal || 0) + (infantsTotal || 0),
+    [infantsTotal, seatTotal]
+  );
+  useEffect(() => {
+    if (selectedSeats.length > 0 && seats.length === 0) {
+      return;
+    }
+    setTotalAmount(computedTotalAmount);
+  }, [computedTotalAmount, seats.length, selectedSeats.length]);
+  const formattedTotalAmount = useMemo(
+    () => formatCurrencyValue(totalAmount),
+    [formatCurrencyValue, totalAmount]
+  );
+  const buildPendingBookingData = useCallback(() => {
+    if (!tripData) {
+      return null;
+    }
+
+    const returnUrl =
+      typeof window !== "undefined" ? window.location.pathname : "/";
+
+    return {
+      tripData,
+      bookerName,
+      bookerEmail,
+      bookerPhone,
+      numberOfAdults,
+      numberOfInfants,
+      passengers,
+      selectedSeats,
+      totalAmount,
+      selectedTripType,
+      price: formattedTotalAmount,
+      pricePerSeat: selectedPriceLabel,
+      from,
+      to,
+      returnUrl,
+      shouldReopenModal: true,
+      searchParams: {
+        from,
+        to,
+        departure: tripData?.departureTime || new Date().toISOString(),
+      },
+      originalTripData: tripData,
+      currency,
+      timestamp: Date.now(),
+    };
+  }, [
+    bookerEmail,
+    bookerName,
+    bookerPhone,
+    from,
+    numberOfAdults,
+    numberOfInfants,
+    passengers,
+    formattedTotalAmount,
+    selectedPriceLabel,
+    selectedSeats,
+    selectedTripType,
+    to,
+    totalAmount,
+    tripData,
+    currency,
+  ]);
+  const redirectToLoginForBooking = useCallback(() => {
+    const pendingData = buildPendingBookingData();
+
+    if (!pendingData) {
+      toast.error("Trip details missing. Please search again.", {
+        duration: 4000,
+      });
+      router.push("/signin");
+      onClose();
+      return;
+    }
+
+    localStorage.setItem("pendingBooking", JSON.stringify(pendingData));
+
+    let countdown = 3;
+    const toastId = toast.loading(
+      `Please log in to complete your booking. Redirecting to login page in ${countdown} seconds...`,
+      {
+        duration: 3000,
+      }
+    );
+
+    const countdownInterval = setInterval(() => {
+      countdown--;
+      if (countdown > 0) {
+        toast.loading(
+          `Please log in to complete your booking. Redirecting to login page in ${countdown} seconds...`,
+          {
+            id: toastId,
+          }
+        );
+      }
+    }, 1000);
+
+    setTimeout(() => {
+      clearInterval(countdownInterval);
+      toast.dismiss(toastId);
+      toast.success("Redirecting to login page...", { duration: 2000 });
+      router.push("/signin");
+      onClose();
+    }, 3000);
+  }, [buildPendingBookingData, onClose, router]);
+
+  useEffect(() => {
+    if (
+      selectedTripType === "ONE_WAY" &&
+      oneWayPrice === undefined &&
+      roundTripPrice !== undefined
+    ) {
+      setSelectedTripType("ROUND_TRIP");
+    } else if (
+      selectedTripType === "ROUND_TRIP" &&
+      roundTripPrice === undefined &&
+      oneWayPrice !== undefined
+    ) {
+      setSelectedTripType("ONE_WAY");
+    }
+  }, [selectedTripType, oneWayPrice, roundTripPrice]);
 
   const createEmptyPassenger = (): Passenger => ({
     type: "ADULT",
@@ -137,12 +485,16 @@ const BookModal: React.FC<BookModalProps> = ({
             skipPassengerSyncRef.current = true;
             setPassengers(bookingData.passengers || []);
             setTotalAmount(bookingData.totalAmount || 0);
+            setSelectedTripType(bookingData.selectedTripType || "ONE_WAY");
 
             // Set booking details for confirmation screen
             setBookingDetails({
               from: bookingData.from,
               to: bookingData.to,
-              price: bookingData.price || bookingData.totalAmount,
+              price:
+                bookingData.price && bookingData.price.length > 0
+                  ? bookingData.price
+                  : formattedTotalAmount,
               selectedSeats: bookingData.selectedSeats,
               passengers: bookingData.passengers,
               bookerName: bookingData.bookerName,
@@ -163,7 +515,7 @@ const BookModal: React.FC<BookModalProps> = ({
         }
       }
     }
-  }, [isModalOpen]);
+  }, [formattedTotalAmount, isModalOpen]);
 
   // Reset all states when modal is closed
   const resetModalStates = () => {
@@ -176,6 +528,8 @@ const BookModal: React.FC<BookModalProps> = ({
     setPhoneError("");
     setSeatError(null);
     setSelectedSeats([]);
+    setSelectedTripType("ONE_WAY");
+    setTotalAmount(0);
   };
 
   // Enhanced onClose to reset states and cancel booking if needed
@@ -241,6 +595,11 @@ const BookModal: React.FC<BookModalProps> = ({
 
       if (isPaymentCompleted) {
         // Payment is complete, generate PDF invoice
+        const resolvedTotalAmount =
+          typeof bookingData.totalAmount === "number"
+            ? bookingData.totalAmount
+            : totalAmount;
+        const resolvedCurrency = currency;
         const invoiceData = {
           bookingId: bookingData.id,
           tripId: bookingData.tripId || tripData?.id,
@@ -253,8 +612,8 @@ const BookModal: React.FC<BookModalProps> = ({
           bookerName: bookerName,
           bookerEmail: bookerEmail,
           bookerPhone: bookerPhone,
-          totalAmount: totalAmount,
-          currency: "EGP",
+          totalAmount: resolvedTotalAmount,
+          currency: resolvedCurrency,
           bookingDate: bookingData.createdAt || new Date().toISOString(),
           paymentStatus: bookingData.status,
         };
@@ -279,7 +638,7 @@ const BookModal: React.FC<BookModalProps> = ({
         setBookingDetails({
           from,
           to,
-          price,
+          price: formatCurrencyValue(invoiceData.totalAmount),
           selectedSeats,
           passengers: passengers.filter((p) => p.name.trim() !== ""),
           bookerName,
@@ -406,7 +765,7 @@ const BookModal: React.FC<BookModalProps> = ({
               parsePriceValue(seat.seatPrice),
             roundTripBasePrice:
               parsePriceValue(seat.roundTripBasePrice),
-            currency: seat.currency || tripData?.currency || "EGP",
+            currency: DISPLAY_CURRENCY,
           }))
           .filter((seat: any) => seat.id && isValidUUID(seat.id));
 
@@ -460,6 +819,10 @@ const BookModal: React.FC<BookModalProps> = ({
             setNumberOfAdults(data.numberOfAdults || 1);
             setNumberOfInfants(data.numberOfInfants || 0);
             setSelectedSeats(data.selectedSeats || []);
+            setSelectedTripType(data.selectedTripType || "ONE_WAY");
+            if (typeof data.totalAmount === "number") {
+              setTotalAmount(data.totalAmount);
+            }
             if (data.passengers) {
               skipPassengerSyncRef.current = true;
               setPassengers(data.passengers);
@@ -575,23 +938,13 @@ const BookModal: React.FC<BookModalProps> = ({
     }
   }, [numberOfAdults]);
 
-  // Calculate total amount
-  useEffect(() => {
-    const basePrice =
-      tripData?.oneWayBasePrice ??
-      tripData?.roundTripBasePrice ??
-      tripData?.basePrice ??
-      200;
-    const infantPrice = 50; // You might want to get this from API
-    const total = numberOfAdults * basePrice + numberOfInfants * infantPrice;
-    setTotalAmount(total);
-  }, [numberOfAdults, numberOfInfants, tripData]);
 
   // Check if form is valid
   const isFormValid = () => {
     if (!bookerName || !bookerEmail || !bookerPhone) return false;
     if (phoneError || !validatePhone(bookerPhone)) return false;
     if (seats.length === 0 || seatError) return false;
+    if (selectedPriceValue === undefined) return false;
     if (
       selectedSeats.length !== numberOfAdults ||
       selectedSeats.some((seatId) => !isValidUUID(seatId))
@@ -728,69 +1081,7 @@ const BookModal: React.FC<BookModalProps> = ({
     const isLoggedIn = !!token;
 
     if (!isLoggedIn) {
-      // Store complete booking data and search parameters for after login
-      const bookingData = {
-        // Trip and booking data
-        tripData,
-        bookerName,
-        bookerEmail,
-        bookerPhone,
-        numberOfAdults,
-        numberOfInfants,
-        passengers,
-        selectedSeats,
-        totalAmount,
-        from,
-        to,
-        returnUrl: window.location.pathname,
-        shouldReopenModal: true,
-
-        // Store search parameters to recreate the search
-        searchParams: {
-          from,
-          to,
-          // We can derive approximate dates or store them if available
-          departure: tripData?.departureTime || new Date().toISOString(),
-        },
-
-        // Store the complete trip data so we don't lose it
-        originalTripData: tripData,
-
-        // Timestamp for data freshness
-        timestamp: Date.now(),
-      };
-      localStorage.setItem("pendingBooking", JSON.stringify(bookingData));
-
-      // Show toaster with countdown
-      let countdown = 3;
-      const toastId = toast.loading(
-        `Please log in to complete your booking. Redirecting to login page in ${countdown} seconds...`,
-        {
-          duration: 3000,
-        }
-      );
-
-      const countdownInterval = setInterval(() => {
-        countdown--;
-        if (countdown > 0) {
-          toast.loading(
-            `Please log in to complete your booking. Redirecting to login page in ${countdown} seconds...`,
-            {
-              id: toastId,
-            }
-          );
-        }
-      }, 1000);
-
-      // Redirect after countdown
-      setTimeout(() => {
-        clearInterval(countdownInterval);
-        toast.dismiss(toastId);
-        toast.success("Redirecting to login page...", { duration: 2000 });
-        router.push("/signin");
-        onClose();
-      }, 3000);
-
+      redirectToLoginForBooking();
       return;
     }
 
@@ -868,6 +1159,15 @@ const BookModal: React.FC<BookModalProps> = ({
         body: JSON.stringify(bookingData),
       });
 
+      if (bookingResponse.status === 401) {
+        toast.error("Please sign in to continue your booking.", {
+          duration: 4000,
+        });
+        localStorage.removeItem("authToken");
+        redirectToLoginForBooking();
+        return;
+      }
+
       if (!bookingResponse.ok) {
         const errorResponse = await bookingResponse.text();
         console.error("Booking creation error response:", errorResponse);
@@ -903,6 +1203,15 @@ const BookModal: React.FC<BookModalProps> = ({
           body: JSON.stringify(paymentData),
         }
       );
+
+      if (paymentResponse.status === 401) {
+        toast.error("Please sign in to continue your booking.", {
+          duration: 4000,
+        });
+        localStorage.removeItem("authToken");
+        redirectToLoginForBooking();
+        return;
+      }
 
       if (!paymentResponse.ok) {
         const errorResponse = await paymentResponse.text();
@@ -1604,6 +1913,97 @@ const BookModal: React.FC<BookModalProps> = ({
                       ))}
                     </div>
                   )}
+
+                  {/* Trip Type & Pricing */}
+                  <div className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-sm">
+                    <h4 className="font-bold text-lg text-gray-900 mb-4 flex items-center gap-2">
+                      <svg
+                        className="w-5 h-5 text-teal-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2v-7H3v7a2 2 0 002 2z"
+                        />
+                      </svg>
+                      Trip Type & Price
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block font-bold text-gray-700 mb-3">
+                          Trip Type
+                        </label>
+                        <select
+                          value={selectedTripType}
+                          onChange={(e) =>
+                            setSelectedTripType(
+                              e.target.value === "ROUND_TRIP"
+                                ? "ROUND_TRIP"
+                                : "ONE_WAY"
+                            )
+                          }
+                          disabled={
+                            oneWayPrice === undefined &&
+                            roundTripPrice === undefined
+                          }
+                          className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-teal-500 focus:ring-2 focus:ring-teal-200 outline-none transition-all duration-200 font-medium bg-white disabled:opacity-60"
+                        >
+                          <option
+                            value="ONE_WAY"
+                            disabled={oneWayPrice === undefined}
+                          >
+                            One Way
+                            {oneWayPrice !== undefined
+                              ? ` (${formatCurrencyValue(oneWayPrice)})`
+                              : " (Unavailable)"}
+                          </option>
+                          <option
+                            value="ROUND_TRIP"
+                            disabled={roundTripPrice === undefined}
+                          >
+                            Round Trip
+                            {roundTripPrice !== undefined
+                              ? ` (${formatCurrencyValue(roundTripPrice)})`
+                              : " (Unavailable)"}
+                          </option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-bold text-gray-700 mb-3">
+                          Selected Price
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedPriceLabel}
+                          disabled
+                          className="w-full p-4 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 font-semibold cursor-not-allowed"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-gray-700 mb-3">
+                          Estimated Total
+                        </label>
+                        <input
+                          type="text"
+                          value={formattedTotalAmount}
+                          disabled
+                          className="w-full p-4 border-2 border-teal-100 rounded-xl bg-gray-50 text-gray-900 font-semibold cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-4">
+                      Total updates automatically as you change seats, trip type, or infant count.
+                    </p>
+                    {oneWayPrice === undefined && roundTripPrice === undefined ? (
+                      <p className="text-sm text-red-500 mt-2">
+                        Pricing is unavailable for this trip. Please pick a different departure.
+                      </p>
+                    ) : null}
+                  </div>
 
                   {/* Action Buttons */}
                   <div className="flex flex-col sm:flex-row justify-end gap-3 sm:gap-4 pt-4 sm:pt-6">

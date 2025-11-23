@@ -4,6 +4,23 @@ import React, { Suspense, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { openInvoicePDF, type BookingData } from "@/utils/pdfGenerator";
 
+const formatCurrency = (amount?: number, currency = "EGP") => {
+  if (typeof amount !== "number" || Number.isNaN(amount)) {
+    return `${currency} —`;
+  }
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch (error) {
+    return `${currency} ${amount}`;
+  }
+};
+
 interface BookingDetails {
   from: string;
   to: string;
@@ -93,6 +110,19 @@ const PaymentSuccessContent = () => {
         verifiedBooking.status === "PENDING_PAYMENT";
 
       if (isPaymentCompleted) {
+        const backendTotalAmount =
+          typeof verifiedBooking.totalAmount === "number"
+            ? verifiedBooking.totalAmount
+            : Number(verifiedBooking.totalAmount);
+        const normalizedTotalAmount = Number.isFinite(backendTotalAmount)
+          ? backendTotalAmount
+          : bookingData.totalAmount || 0;
+        const bookingCurrency =
+          verifiedBooking.currency ||
+          bookingData.currency ||
+          bookingData.originalTripData?.currency ||
+          "EGP";
+
         // Prepare invoice data
         const invoiceData = {
           bookingId: verifiedBooking.id,
@@ -110,8 +140,8 @@ const PaymentSuccessContent = () => {
           bookerName: bookingData.bookerName,
           bookerEmail: bookingData.bookerEmail,
           bookerPhone: bookingData.bookerPhone,
-          totalAmount: bookingData.totalAmount,
-          currency: "EGP",
+          totalAmount: normalizedTotalAmount,
+          currency: bookingCurrency,
           bookingDate: verifiedBooking.createdAt || new Date().toISOString(),
           paymentStatus: verifiedBooking.status,
         };
@@ -120,7 +150,7 @@ const PaymentSuccessContent = () => {
         setBookingDetails({
           from: bookingData.from,
           to: bookingData.to,
-          price: bookingData.price || bookingData.totalAmount,
+          price: formatCurrency(normalizedTotalAmount, bookingCurrency),
           selectedSeats: bookingData.selectedSeats,
           passengers: bookingData.passengers.filter(
             (p: any) => p.name.trim() !== ""
@@ -171,7 +201,7 @@ const PaymentSuccessContent = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-indigo-50 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-linear-to-br from-green-50 via-blue-50 to-indigo-50 flex items-center justify-center p-4 sm:p-6 lg:p-8">
       <div className="w-full max-w-2xl">
         {isLoading ? (
           /* Loading State */
@@ -188,7 +218,7 @@ const PaymentSuccessContent = () => {
           /* Success State */
           <div className="space-y-6 sm:space-y-8">
             <div className="bg-white rounded-3xl shadow-2xl p-8 sm:p-12 text-center border border-gray-100">
-              <div className="mx-auto w-24 h-24 sm:w-32 sm:h-32 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-lg mb-8">
+              <div className="mx-auto w-24 h-24 sm:w-32 sm:h-32 bg-linear-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-lg mb-8">
                 <svg
                   className="w-12 h-12 sm:w-16 sm:h-16 text-white"
                   fill="none"
@@ -212,7 +242,7 @@ const PaymentSuccessContent = () => {
               </p>
 
               {/* Booking Summary */}
-              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-6 sm:p-8 text-left border border-gray-200 mb-8">
+              <div className="bg-linear-to-br from-gray-50 to-gray-100 rounded-2xl p-6 sm:p-8 text-left border border-gray-200 mb-8">
                 <h3 className="text-lg sm:text-xl font-bold mb-6 text-gray-900 flex items-center gap-2">
                   <svg
                     className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600"
@@ -338,7 +368,7 @@ const PaymentSuccessContent = () => {
                         duration: 3000,
                       });
                     }}
-                    className="w-full flex-1 px-6 py-4 sm:px-8 sm:py-5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-300 font-bold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-2"
+                    className="w-full flex-1 px-6 py-4 sm:px-8 sm:py-5 bg-linear-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-300 font-bold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-2"
                   >
                     <svg
                       className="w-6 h-6"
@@ -358,7 +388,7 @@ const PaymentSuccessContent = () => {
                 )}
                 <button
                   onClick={() => router.push("/")}
-                  className="w-full flex-1 px-6 py-4 sm:px-8 sm:py-5 bg-gradient-to-r from-[#179FDB] to-[#0f7ac3] text-white rounded-xl hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 font-bold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                  className="w-full flex-1 px-6 py-4 sm:px-8 sm:py-5 bg-linear-to-r from-[#179FDB] to-[#0f7ac3] text-white rounded-xl hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 font-bold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                 >
                   Back to Home
                 </button>
@@ -392,7 +422,7 @@ const PaymentSuccessContent = () => {
             </p>
             <button
               onClick={() => router.push("/")}
-              className="px-8 py-4 bg-gradient-to-r from-[#179FDB] to-[#0f7ac3] text-white rounded-xl hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+              className="px-8 py-4 bg-linear-to-r from-[#179FDB] to-[#0f7ac3] text-white rounded-xl hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-1"
             >
               Back to Home
             </button>

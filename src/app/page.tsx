@@ -35,6 +35,8 @@ const DEFAULT_SEARCH_FILTERS = {
   offset: "0",
 };
 
+const DEFAULT_CURRENCY = "EGP";
+
 const parsePriceValue = (value: any): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -43,14 +45,74 @@ const parsePriceValue = (value: any): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const extractSeatMap = (trip: any) => {
+  if (Array.isArray(trip?.seatMap)) {
+    return trip.seatMap;
+  }
+  if (Array.isArray(trip?.data?.seatMap)) {
+    return trip.data.seatMap;
+  }
+  return undefined;
+};
+
+const pickSeatPrice = (
+  seat: any,
+  tripType: "ONE_WAY" | "ROUND_TRIP"
+): number | undefined => {
+  if (!seat) return undefined;
+
+  const primary =
+    tripType === "ROUND_TRIP"
+      ? parsePriceValue(seat?.roundTripBasePrice)
+      : parsePriceValue(seat?.oneWayBasePrice);
+  const secondary =
+    tripType === "ROUND_TRIP"
+      ? parsePriceValue(seat?.oneWayBasePrice)
+      : parsePriceValue(seat?.roundTripBasePrice);
+  return (
+    primary ??
+    parsePriceValue(seat?.effectivePrice) ??
+    parsePriceValue(seat?.seatPrice) ??
+    secondary
+  );
+};
+
+const getSeatFallbackPrice = (
+  trip: any,
+  tripType: "ONE_WAY" | "ROUND_TRIP"
+): number | undefined => {
+  const seatMap = extractSeatMap(trip);
+  if (!seatMap) return undefined;
+
+  for (const seat of seatMap) {
+    const price = pickSeatPrice(seat, tripType);
+    if (price !== undefined) {
+      return price;
+    }
+  }
+
+  return undefined;
+};
+
 const formatTripPriceLabel = (trip: any): string => {
   const fallback = parsePriceValue(trip?.basePrice);
+  const seatOneWayFallback = getSeatFallbackPrice(trip, "ONE_WAY");
+  const seatRoundTripFallback = getSeatFallbackPrice(trip, "ROUND_TRIP");
   const formatAmount = (value?: number) =>
-    typeof value === "number" ? `EGP ${value}` : "EGP —";
+    typeof value === "number"
+      ? `${value.toLocaleString(undefined, {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        })} ${DEFAULT_CURRENCY}`
+      : `— ${DEFAULT_CURRENCY}`;
   const oneWayValue =
-    parsePriceValue(trip?.oneWayBasePrice) ?? fallback;
+    parsePriceValue(trip?.oneWayBasePrice) ??
+    seatOneWayFallback ??
+    fallback;
   const roundTripValue =
-    parsePriceValue(trip?.roundTripBasePrice) ?? fallback;
+    parsePriceValue(trip?.roundTripBasePrice) ??
+    seatRoundTripFallback ??
+    fallback;
   const oneWay = formatAmount(oneWayValue);
   const roundTrip = formatAmount(roundTripValue);
   return `One Way: ${oneWay} | Round Trip: ${roundTrip}`;
@@ -494,7 +556,7 @@ export default function Home() {
 
           // Create a temporary search result with the stored trip data
           const tempCurrency =
-            bookingData.originalTripData?.currency || "USD";
+            bookingData.originalTripData?.currency || "EGP";
           const tempOneWay = bookingData.originalTripData?.oneWayBasePrice;
           const tempRoundTrip =
             bookingData.originalTripData?.roundTripBasePrice;
@@ -610,7 +672,22 @@ export default function Home() {
         : trip.departure
         ? trip.departure
         : "";
-      const priceLabel = formatTripPriceLabel(trip);
+      const normalizedSeatMap = extractSeatMap(trip) || [];
+      const seatOneWayFallback = getSeatFallbackPrice(trip, "ONE_WAY");
+      const seatRoundTripFallback = getSeatFallbackPrice(trip, "ROUND_TRIP");
+      const basePrice = parsePriceValue(trip?.basePrice);
+      const normalizedOneWay =
+        parsePriceValue(trip?.oneWayBasePrice) ??
+        seatOneWayFallback ??
+        basePrice;
+      const normalizedRoundTrip =
+        parsePriceValue(trip?.roundTripBasePrice) ??
+        seatRoundTripFallback ??
+        basePrice;
+      const priceLabel = formatTripPriceLabel({
+        ...trip,
+        seatMap: normalizedSeatMap,
+      });
       return {
         id:
           trip.id ||
@@ -624,10 +701,10 @@ export default function Home() {
         flightNumber: trip.flightNumber || "",
         price: priceLabel,
         image: "/siwa.jpg",
-        seatMap: trip.seatMap,
-        oneWayBasePrice: parsePriceValue(trip.oneWayBasePrice),
-        roundTripBasePrice: parsePriceValue(trip.roundTripBasePrice),
-        currency: trip.currency,
+        seatMap: normalizedSeatMap,
+        oneWayBasePrice: normalizedOneWay,
+        roundTripBasePrice: normalizedRoundTrip,
+        currency: DEFAULT_CURRENCY,
       };
     });
   };
