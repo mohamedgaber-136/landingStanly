@@ -19,7 +19,8 @@ interface Trip {
   price: string;
   image?: string;
   seatMap?: any;
-  basePrice?: number;
+  oneWayBasePrice?: number;
+  roundTripBasePrice?: number;
   currency?: string;
 }
 
@@ -32,6 +33,27 @@ const DEFAULT_SEARCH_FILTERS = {
   minAvailableSeats: "1",
   limit: "50",
   offset: "0",
+};
+
+const parsePriceValue = (value: any): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const formatTripPriceLabel = (trip: any): string => {
+  const fallback = parsePriceValue(trip?.basePrice);
+  const formatAmount = (value?: number) =>
+    typeof value === "number" ? `EGP ${value}` : "EGP —";
+  const oneWayValue =
+    parsePriceValue(trip?.oneWayBasePrice) ?? fallback;
+  const roundTripValue =
+    parsePriceValue(trip?.roundTripBasePrice) ?? fallback;
+  const oneWay = formatAmount(oneWayValue);
+  const roundTrip = formatAmount(roundTripValue);
+  return `One Way: ${oneWay} | Round Trip: ${roundTrip}`;
 };
 
 export default function Home() {
@@ -413,6 +435,7 @@ export default function Home() {
             );
 
             const targetTrip = exactMatch || similarMatch || trips[0];
+            const priceLabel = formatTripPriceLabel(targetTrip);
             const mappedTrip = {
               id: targetTrip.id,
               from: targetTrip.origin,
@@ -422,7 +445,13 @@ export default function Home() {
               ).toLocaleDateString(),
               availableSeats: targetTrip.availableSeats,
               flightNumber: targetTrip.flightNumber,
-              price: `$${targetTrip.basePrice} ${targetTrip.currency}`,
+              price: priceLabel,
+              oneWayBasePrice: parsePriceValue(targetTrip.oneWayBasePrice),
+              roundTripBasePrice: parsePriceValue(
+                targetTrip.roundTripBasePrice
+              ),
+              currency: targetTrip.currency,
+              seatMap: targetTrip.seatMap,
             };
 
             const tripKey =
@@ -464,6 +493,19 @@ export default function Home() {
           toast("Restoring your trip data...", { duration: 2000 });
 
           // Create a temporary search result with the stored trip data
+          const tempCurrency =
+            bookingData.originalTripData?.currency || "USD";
+          const tempOneWay = bookingData.originalTripData?.oneWayBasePrice;
+          const tempRoundTrip =
+            bookingData.originalTripData?.roundTripBasePrice;
+          const tempBasePrice = bookingData.originalTripData?.basePrice || 200;
+          const tempPriceLabel = formatTripPriceLabel({
+            price: bookingData.originalTripData?.price,
+            currency: tempCurrency,
+            oneWayBasePrice: tempOneWay,
+            roundTripBasePrice: tempRoundTrip,
+            basePrice: tempBasePrice,
+          });
           const tempTrip = {
             id: bookingData.originalTripData?.id || `temp-${Date.now()}`,
             from: bookingData.from,
@@ -476,13 +518,12 @@ export default function Home() {
             availableSeats: bookingData.originalTripData?.availableSeats || 10,
             flightNumber:
               bookingData.originalTripData?.flightNumber || "TEMP001",
-            price: `$${bookingData.originalTripData?.basePrice || 200} ${
-              bookingData.originalTripData?.currency || "USD"
-            }`,
+            price: tempPriceLabel,
             image: "/siwa.jpg",
             seatMap: bookingData.originalTripData?.seatMap,
-            basePrice: bookingData.originalTripData?.basePrice || 200,
-            currency: bookingData.originalTripData?.currency || "USD",
+            oneWayBasePrice: parsePriceValue(tempOneWay),
+            roundTripBasePrice: parsePriceValue(tempRoundTrip),
+            currency: tempCurrency,
           };
 
           // Add this trip to search results
@@ -569,6 +610,7 @@ export default function Home() {
         : trip.departure
         ? trip.departure
         : "";
+      const priceLabel = formatTripPriceLabel(trip);
       return {
         id:
           trip.id ||
@@ -580,13 +622,11 @@ export default function Home() {
         departure: departureDate,
         availableSeats: trip.availableSeats ?? 0,
         flightNumber: trip.flightNumber || "",
-        price:
-          trip.basePrice !== undefined
-            ? `$${trip.basePrice}${trip.currency ? " " + trip.currency : ""}`
-            : trip.price || "",
+        price: priceLabel,
         image: "/siwa.jpg",
         seatMap: trip.seatMap,
-        basePrice: trip.basePrice,
+        oneWayBasePrice: parsePriceValue(trip.oneWayBasePrice),
+        roundTripBasePrice: parsePriceValue(trip.roundTripBasePrice),
         currency: trip.currency,
       };
     });

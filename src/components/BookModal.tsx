@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   generateInvoicePDF,
@@ -41,6 +41,14 @@ const BookModal: React.FC<BookModalProps> = ({
 }) => {
   const router = useRouter();
 
+  const parsePriceValue = useCallback((value: any) => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }, []);
+
   // Form state
   const [bookerName, setBookerName] = useState("");
   const [bookerEmail, setBookerEmail] = useState("");
@@ -62,6 +70,32 @@ const BookModal: React.FC<BookModalProps> = ({
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
   const [invoiceData, setInvoiceData] = useState<BookingData | null>(null);
   const skipPassengerSyncRef = useRef(false);
+  const formatSeatPrice = useCallback(
+    (seat?: any) => {
+      const currency = seat?.currency || tripData?.currency || "EGP";
+      const formatAmount = (value?: number) =>
+        typeof value === "number" ? `${currency} ${value}` : `${currency} —`;
+      const fallbackOneWay =
+        parsePriceValue(seat?.oneWayBasePrice) ??
+        parsePriceValue(tripData?.oneWayBasePrice) ??
+        parsePriceValue(tripData?.basePrice);
+      const fallbackRoundTrip =
+        parsePriceValue(seat?.roundTripBasePrice) ??
+        parsePriceValue(tripData?.roundTripBasePrice) ??
+        parsePriceValue(tripData?.basePrice);
+      return {
+        oneWayLabel: `One Way: ${formatAmount(fallbackOneWay)}`,
+        roundTripLabel: `Round Trip: ${formatAmount(fallbackRoundTrip)}`,
+      };
+    },
+    [
+      tripData?.oneWayBasePrice,
+      tripData?.roundTripBasePrice,
+      tripData?.basePrice,
+      tripData?.currency,
+      parsePriceValue,
+    ]
+  );
 
   const createEmptyPassenger = (): Passenger => ({
     type: "ADULT",
@@ -366,6 +400,13 @@ const BookModal: React.FC<BookModalProps> = ({
             seatNumber: seat.seatNumber,
             isAvailable:
               typeof seat.isAvailable === "boolean" ? seat.isAvailable : true,
+            oneWayBasePrice:
+              parsePriceValue(seat.oneWayBasePrice) ??
+              parsePriceValue(seat.effectivePrice) ??
+              parsePriceValue(seat.seatPrice),
+            roundTripBasePrice:
+              parsePriceValue(seat.roundTripBasePrice),
+            currency: seat.currency || tripData?.currency || "EGP",
           }))
           .filter((seat: any) => seat.id && isValidUUID(seat.id));
 
@@ -390,7 +431,7 @@ const BookModal: React.FC<BookModalProps> = ({
     };
 
     loadSeats();
-  }, [tripData, isModalOpen]);
+  }, [tripData, isModalOpen, parsePriceValue]);
 
   useEffect(() => {
     if (seats.length === 0) {
@@ -536,7 +577,11 @@ const BookModal: React.FC<BookModalProps> = ({
 
   // Calculate total amount
   useEffect(() => {
-    const basePrice = tripData?.basePrice || 200;
+    const basePrice =
+      tripData?.oneWayBasePrice ??
+      tripData?.roundTripBasePrice ??
+      tripData?.basePrice ??
+      200;
     const infantPrice = 50; // You might want to get this from API
     const total = numberOfAdults * basePrice + numberOfInfants * infantPrice;
     setTotalAmount(total);
@@ -959,7 +1004,7 @@ const BookModal: React.FC<BookModalProps> = ({
             {/* Booking confirmation view */}
             {bookingConfirmed ? (
               <div className="text-center space-y-6 sm:space-y-8 py-4 sm:py-8">
-                <div className="mx-auto w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-lg">
+                <div className="mx-auto w-20 h-20 sm:w-24 sm:h-24 bg-linear-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-lg">
                   <svg
                     className="w-8 h-8 sm:w-10 sm:h-10 text-white"
                     fill="none"
@@ -984,7 +1029,7 @@ const BookModal: React.FC<BookModalProps> = ({
                   </p>
                 </div>
 
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-4 sm:p-6 lg:p-8 text-left max-w-full sm:max-w-md mx-auto border border-gray-200">
+                <div className="bg-linear-to-br from-gray-50 to-gray-100 rounded-2xl p-4 sm:p-6 lg:p-8 text-left max-w-full sm:max-w-md mx-auto border border-gray-200">
                   <h4 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6 text-gray-900 flex items-center gap-2">
                     <svg
                       className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600"
@@ -1116,7 +1161,7 @@ const BookModal: React.FC<BookModalProps> = ({
                             );
                           }
                         }}
-                        className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-300 font-semibold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-2"
+                        className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 bg-linear-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-300 font-semibold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-2"
                       >
                         <svg
                           className="w-5 h-5"
@@ -1136,7 +1181,7 @@ const BookModal: React.FC<BookModalProps> = ({
                     )}
                     <button
                       onClick={handleModalClose}
-                      className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 bg-gradient-to-r from-[#179FDB] to-[#0f7ac3] text-white rounded-xl hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 font-semibold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                      className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 bg-linear-to-r from-[#179FDB] to-[#0f7ac3] text-white rounded-xl hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 font-semibold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                     >
                       Close
                     </button>
@@ -1145,7 +1190,7 @@ const BookModal: React.FC<BookModalProps> = ({
               </div>
             ) : showPayment && paymentUrl ? (
               <div className="space-y-4 sm:space-y-6">
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 sm:p-6">
+                <div className="bg-linear-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 sm:p-6">
                   <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
                     <div className="w-2 h-2 sm:w-3 sm:h-3 bg-blue-500 rounded-full animate-pulse"></div>
                     <h3 className="text-lg sm:text-xl font-bold text-blue-900">
@@ -1172,7 +1217,7 @@ const BookModal: React.FC<BookModalProps> = ({
                   />
                 </div>
 
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 sm:pt-6 border-t-2 border-gray-100 bg-gradient-to-r from-gray-50 to-gray-100 p-4 sm:p-6 rounded-2xl">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 sm:pt-6 border-t-2 border-gray-100 bg-linear-to-r from-gray-50 to-gray-100 p-4 sm:p-6 rounded-2xl">
                   <button
                     onClick={handleCancelBooking}
                     disabled={isLoading}
@@ -1195,7 +1240,7 @@ const BookModal: React.FC<BookModalProps> = ({
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-10">
                 {/* Left Column - Seat Selection */}
                 <div className="space-y-4 sm:space-y-6">
-                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-blue-200">
+                  <div className="bg-linear-to-r from-blue-50 to-indigo-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-blue-200">
                     <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
                       <svg
                         className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600"
@@ -1243,25 +1288,37 @@ const BookModal: React.FC<BookModalProps> = ({
                       </div>
                     ) : (
                       <div className="grid grid-cols-4 gap-2 sm:gap-3 max-w-sm sm:max-w-md mx-auto">
-                        {seats.map((seat: any) => (
-                          <button
-                            key={seat.id}
-                            onClick={() => handleSeatClick(seat.id)}
-                            disabled={!seat.isAvailable}
-                            className={`
-                              p-2 sm:p-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold border-2 transition-all duration-200 transform hover:scale-105
-                              ${
-                                !seat.isAvailable
-                                  ? "bg-gray-200 text-gray-500 cursor-not-allowed border-gray-300"
-                                  : selectedSeats.includes(seat.id)
-                                  ? "bg-gradient-to-br from-[#179FDB] to-[#0f7ac3] text-white border-[#179FDB] shadow-lg"
-                                  : "bg-white border-gray-300 hover:border-[#179FDB] hover:bg-blue-50 text-gray-700"
-                              }
-                            `}
-                          >
-                            {seat.seatNumber}
-                          </button>
-                        ))}
+                        {seats.map((seat: any) => {
+                          const { oneWayLabel, roundTripLabel } =
+                            formatSeatPrice(seat);
+                          return (
+                            <button
+                              key={seat.id}
+                              onClick={() => handleSeatClick(seat.id)}
+                              disabled={!seat.isAvailable}
+                              className={`
+                                p-2 sm:p-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold border-2 transition-all duration-200 transform hover:scale-105
+                                ${
+                                  !seat.isAvailable
+                                    ? "bg-gray-200 text-gray-500 cursor-not-allowed border-gray-300"
+                                    : selectedSeats.includes(seat.id)
+                                    ? "bg-linear-to-br from-[#179FDB] to-[#0f7ac3] text-white border-[#179FDB] shadow-lg"
+                                    : "bg-white border-gray-300 hover:border-[#179FDB] hover:bg-blue-50 text-gray-700"
+                                }
+                              `}
+                            >
+                              <span className="block text-sm sm:text-base leading-none">
+                                {seat.seatNumber}
+                              </span>
+                              <span className="block text-[10px] sm:text-xs font-normal text-gray-600 mt-1">
+                                {oneWayLabel}
+                              </span>
+                              <span className="block text-[10px] sm:text-xs font-normal text-gray-600">
+                                {roundTripLabel}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -1274,7 +1331,7 @@ const BookModal: React.FC<BookModalProps> = ({
                           </span>
                         </div>
                         <div className="flex items-center gap-2 justify-center">
-                          <div className="w-4 h-4 sm:w-5 sm:h-5 bg-gradient-to-br from-[#179FDB] to-[#0f7ac3] border-2 border-[#179FDB] rounded-lg"></div>
+                          <div className="w-4 h-4 sm:w-5 sm:h-5 bg-linear-to-br from-[#179FDB] to-[#0f7ac3] border-2 border-[#179FDB] rounded-lg"></div>
                           <span className="font-medium text-gray-600">
                             Selected
                           </span>
@@ -1292,7 +1349,7 @@ const BookModal: React.FC<BookModalProps> = ({
 
                 {/* Right Column - Passenger Information */}
                 <div className="space-y-4 sm:space-y-6">
-                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200">
+                  <div className="bg-linear-to-r from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200">
                     <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                       <svg
                         className="w-6 h-6 text-green-600"
@@ -1460,7 +1517,7 @@ const BookModal: React.FC<BookModalProps> = ({
                           className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-sm"
                         >
                           <h5 className="font-bold text-lg text-gray-900 mb-4 flex items-center gap-2">
-                            <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                            <div className="w-8 h-8 bg-linear-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
                               {index + 1}
                             </div>
                             {passenger.type === "ADULT" ? "Adult" : "Infant"}{" "}
@@ -1559,7 +1616,7 @@ const BookModal: React.FC<BookModalProps> = ({
                     <button
                       onClick={handleBooking}
                       disabled={isLoading || !isFormValid()}
-                      className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 rounded-xl bg-gradient-to-r from-[#179FDB] to-[#0f7ac3] text-white hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none text-sm sm:text-base"
+                      className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 rounded-xl bg-linear-to-r from-[#179FDB] to-[#0f7ac3] text-white hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none text-sm sm:text-base"
                     >
                       {isLoading ? (
                         <div className="flex items-center gap-2 justify-center">
