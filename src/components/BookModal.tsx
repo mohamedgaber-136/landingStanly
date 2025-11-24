@@ -222,38 +222,39 @@ const BookModal: React.FC<BookModalProps> = ({
   const tripRoundTripFallback = tripSeatFallbacks.roundTrip;
   const labelOneWayFallback = labelPriceFallbacks.oneWay;
   const labelRoundTripFallback = labelPriceFallbacks.roundTrip;
-  const oneWayPrice = useMemo(
-    () =>
+  const oneWayPrice = useMemo(() => {
+    const price =
+      seatOneWayFallback ??
+      tripOneWayFallback ??
       parsePriceValue(tripData?.oneWayBasePrice) ??
       labelOneWayFallback ??
-      tripOneWayFallback ??
-      seatOneWayFallback ??
-      baseTripPrice,
-    [
-      tripData?.oneWayBasePrice,
-      labelOneWayFallback,
-      tripOneWayFallback,
-      seatOneWayFallback,
-      baseTripPrice,
-      parsePriceValue,
-    ]
-  );
-  const roundTripPrice = useMemo(
-    () =>
+      baseTripPrice;
+    return price;
+  }, [
+    seatOneWayFallback,
+    tripOneWayFallback,
+    tripData?.oneWayBasePrice,
+    labelOneWayFallback,
+    baseTripPrice,
+    parsePriceValue,
+  ]);
+
+  const roundTripPrice = useMemo(() => {
+    const price =
+      seatRoundTripFallback ??
+      tripRoundTripFallback ??
       parsePriceValue(tripData?.roundTripBasePrice) ??
       labelRoundTripFallback ??
-      tripRoundTripFallback ??
-      seatRoundTripFallback ??
-      baseTripPrice,
-    [
-      tripData?.roundTripBasePrice,
-      labelRoundTripFallback,
-      tripRoundTripFallback,
-      seatRoundTripFallback,
-      baseTripPrice,
-      parsePriceValue,
-    ]
-  );
+      baseTripPrice;
+    return price;
+  }, [
+    seatRoundTripFallback,
+    tripRoundTripFallback,
+    tripData?.roundTripBasePrice,
+    labelRoundTripFallback,
+    baseTripPrice,
+    parsePriceValue,
+  ]);
   const selectedPriceValue =
     selectedTripType === "ROUND_TRIP" ? roundTripPrice : oneWayPrice;
   const selectedPriceLabel = useMemo(
@@ -763,8 +764,7 @@ const BookModal: React.FC<BookModalProps> = ({
               parsePriceValue(seat.oneWayBasePrice) ??
               parsePriceValue(seat.effectivePrice) ??
               parsePriceValue(seat.seatPrice),
-            roundTripBasePrice:
-              parsePriceValue(seat.roundTripBasePrice),
+            roundTripBasePrice: parsePriceValue(seat.roundTripBasePrice),
             currency: DISPLAY_CURRENCY,
           }))
           .filter((seat: any) => seat.id && isValidUUID(seat.id));
@@ -937,7 +937,6 @@ const BookModal: React.FC<BookModalProps> = ({
       );
     }
   }, [numberOfAdults]);
-
 
   // Check if form is valid
   const isFormValid = () => {
@@ -1996,11 +1995,14 @@ const BookModal: React.FC<BookModalProps> = ({
                       </div>
                     </div>
                     <p className="text-sm text-gray-500 mt-4">
-                      Total updates automatically as you change seats, trip type, or infant count.
+                      Total updates automatically as you change seats, trip
+                      type, or infant count.
                     </p>
-                    {oneWayPrice === undefined && roundTripPrice === undefined ? (
+                    {oneWayPrice === undefined &&
+                    roundTripPrice === undefined ? (
                       <p className="text-sm text-red-500 mt-2">
-                        Pricing is unavailable for this trip. Please pick a different departure.
+                        Pricing is unavailable for this trip. Please pick a
+                        different departure.
                       </p>
                     ) : null}
                   </div>
