@@ -60,7 +60,7 @@ const BookModal: React.FC<BookModalProps> = ({
   // Form state
   const [bookerName, setBookerName] = useState("");
   const [bookerEmail, setBookerEmail] = useState("");
-  const [bookerPhone, setBookerPhone] = useState("+20");
+  const [bookerPhone, setBookerPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [numberOfAdults, setNumberOfAdults] = useState(1);
   const [numberOfInfants, setNumberOfInfants] = useState(0);
@@ -90,17 +90,32 @@ const BookModal: React.FC<BookModalProps> = ({
     }
     return [];
   }, [tripData]);
+  /**
+   * Pick the correct seat price based on trip type.
+   * ONE_WAY: Uses oneWayBasePrice (outbound trip only)
+   * ROUND_TRIP: Uses roundTripBasePrice (outbound + return trip combined)
+   *
+   * The API provides prices where:
+   * - oneWayBasePrice = price for one-way journey
+   * - roundTripBasePrice = price for round-trip journey (both directions)
+   */
   const pickSeatPrice = useCallback(
     (seat: any, tripType: "ONE_WAY" | "ROUND_TRIP") => {
       if (!seat) return undefined;
+
+      // Select the primary price based on trip type
       const primary =
         tripType === "ROUND_TRIP"
           ? parsePriceValue(seat?.roundTripBasePrice)
           : parsePriceValue(seat?.oneWayBasePrice);
+
+      // Fallback to secondary price if primary is not available
       const secondary =
         tripType === "ROUND_TRIP"
           ? parsePriceValue(seat?.oneWayBasePrice)
           : parsePriceValue(seat?.roundTripBasePrice);
+
+      // Try primary, then effectivePrice, then seatPrice, then secondary
       return (
         primary ??
         parsePriceValue(seat?.effectivePrice) ??
@@ -280,6 +295,13 @@ const BookModal: React.FC<BookModalProps> = ({
     tripOneWayFallback,
     tripRoundTripFallback,
   ]);
+  /**
+   * Calculate the total cost of all selected seats based on the trip type.
+   * - For ONE_WAY: Sum of all selected seats at one-way price
+   * - For ROUND_TRIP: Sum of all selected seats at round-trip price (which includes both legs)
+   *
+   * Also tracks how many seats are missing price information for fallback calculation.
+   */
   const seatPricingSummary = useMemo(() => {
     let total = 0;
     let seatsMissingPrice = 0;
@@ -291,6 +313,7 @@ const BookModal: React.FC<BookModalProps> = ({
         return;
       }
 
+      // Get the price for this seat based on the selected trip type
       const seatPrice = pickSeatPrice(seat, selectedTripType);
 
       if (typeof seatPrice === "number" && Number.isFinite(seatPrice)) {
@@ -302,6 +325,19 @@ const BookModal: React.FC<BookModalProps> = ({
 
     return { total, seatsMissingPrice };
   }, [pickSeatPrice, selectedSeats, seats, selectedTripType]);
+  /**
+   * Calculate the total cost for seats.
+   *
+   * If seats are selected:
+   *   - Use actual prices from seatPricingSummary
+   *   - For seats missing prices, use fallbackSeatPrice
+   *
+   * If no seats selected yet:
+   *   - Estimate using fallbackSeatPrice * numberOfAdults
+   *
+   * The price used (fallbackSeatPrice) is already trip-type aware,
+   * so this automatically handles ONE_WAY vs ROUND_TRIP correctly.
+   */
   const seatTotal = useMemo(() => {
     if (selectedSeats.length > 0) {
       const { total, seatsMissingPrice } = seatPricingSummary;
@@ -309,6 +345,7 @@ const BookModal: React.FC<BookModalProps> = ({
       return total + fallbackContribution;
     }
 
+    // No seats selected yet - estimate based on number of adults
     return fallbackSeatPrice * Math.max(numberOfAdults, 1);
   }, [
     fallbackSeatPrice,
@@ -316,22 +353,69 @@ const BookModal: React.FC<BookModalProps> = ({
     seatPricingSummary,
     selectedSeats.length,
   ]);
+  /**
+   * Calculate the total cost for infants.
+   * Infants don't occupy separate seats, so they have a separate pricing model.
+   */
   const infantsTotal = useMemo(() => {
     if (!infantPriceValue || numberOfInfants === 0) {
       return 0;
     }
     return infantPriceValue * numberOfInfants;
   }, [infantPriceValue, numberOfInfants]);
+  /**
+   * CENTRALIZED TOTAL AMOUNT CALCULATION
+   *
+   * This is the single source of truth for the total booking cost.
+   *
+   * Formula: totalAmount = seatTotal + infantsTotal
+   *
+   * Where:
+   * - seatTotal = sum of selected seats at trip-type-specific prices
+   *   * ONE_WAY: sum of seats × oneWayBasePrice
+   *   * ROUND_TRIP: sum of seats × roundTripBasePrice (includes both legs)
+   * - infantsTotal = numberOfInfants × infantPrice
+   *
+   * This automatically recalculates when:
+   * - Selected seats change
+   * - Trip type changes (ONE_WAY ↔ ROUND_TRIP)
+   * - Number of infants changes
+   * - Seat prices are loaded/updated
+   */
   const computedTotalAmount = useMemo(
     () => (seatTotal || 0) + (infantsTotal || 0),
     [infantsTotal, seatTotal]
   );
+  /**
+   * Sync the computed total to state.
+   * This updates whenever computedTotalAmount changes.
+   *
+   * Skip update if seats are selected but seat data hasn't loaded yet
+   * to avoid showing incorrect prices.
+   */
   useEffect(() => {
     if (selectedSeats.length > 0 && seats.length === 0) {
       return;
     }
     setTotalAmount(computedTotalAmount);
-  }, [computedTotalAmount, seats.length, selectedSeats.length]);
+
+    // Debug logging for total amount calculation
+    console.log("💰 Total Amount Calculation:", {
+      tripType: selectedTripType,
+      selectedSeatsCount: selectedSeats.length,
+      seatTotal,
+      infantsTotal,
+      computedTotalAmount,
+      currency: DISPLAY_CURRENCY,
+    });
+  }, [
+    computedTotalAmount,
+    seats.length,
+    selectedSeats.length,
+    selectedTripType,
+    seatTotal,
+    infantsTotal,
+  ]);
   const formattedTotalAmount = useMemo(
     () => formatCurrencyValue(totalAmount),
     [formatCurrencyValue, totalAmount]
@@ -485,8 +569,8 @@ const BookModal: React.FC<BookModalProps> = ({
             setSelectedSeats(bookingData.selectedSeats || []);
             skipPassengerSyncRef.current = true;
             setPassengers(bookingData.passengers || []);
-            setTotalAmount(bookingData.totalAmount || 0);
             setSelectedTripType(bookingData.selectedTripType || "ONE_WAY");
+            // Note: totalAmount will auto-calculate from selected seats and trip type
 
             // Set booking details for confirmation screen
             setBookingDetails({
@@ -820,9 +904,7 @@ const BookModal: React.FC<BookModalProps> = ({
             setNumberOfInfants(data.numberOfInfants || 0);
             setSelectedSeats(data.selectedSeats || []);
             setSelectedTripType(data.selectedTripType || "ONE_WAY");
-            if (typeof data.totalAmount === "number") {
-              setTotalAmount(data.totalAmount);
-            }
+            // Note: totalAmount will auto-calculate from selected seats and trip type
             if (data.passengers) {
               skipPassengerSyncRef.current = true;
               setPassengers(data.passengers);
@@ -853,32 +935,18 @@ const BookModal: React.FC<BookModalProps> = ({
 
   // Phone validation function
   const validatePhone = (phone: string): boolean => {
-    // Phone should be in format +20123456789(exactly 14 characters)
-    const phoneRegex = /^\+20\d{10}$/;
-    return phoneRegex.test(phone);
+    // Phone should be at least 10 digits
+    return phone.trim().length >= 10;
   };
 
   // Handle phone input change
   const handlePhoneChange = (value: string) => {
-    // Always ensure phone starts with +20
-    if (!value.startsWith("+20")) {
-      value = "+20" + value.replace(/^\+?20?/, "");
-    }
-
-    // Limit to 14 characters total (+20 + 10 digits)
-    if (value.length > 14) {
-      value = value.substring(0, 14);
-    }
-
     setBookerPhone(value);
 
     // Validate phone and set error
-    if (value.length > 3) {
-      // Only validate if user has typed more than "+20"
+    if (value.trim().length > 0) {
       if (!validatePhone(value)) {
-        setPhoneError(
-          "Phone number must be in format +20012345678 (11 digits after +20)"
-        );
+        setPhoneError("Phone number must be at least 10 digits");
       } else {
         setPhoneError("");
       }
@@ -895,17 +963,49 @@ const BookModal: React.FC<BookModalProps> = ({
     }
 
     setPassengers((prev) => {
-      if (numberOfAdults === prev.length) {
-        return prev;
+      const totalPassengers = numberOfAdults + numberOfInfants;
+      if (totalPassengers === prev.length) {
+        // Check if the distribution of adults vs infants is correct
+        const adultsInArray = prev.filter((p) => p.type === "ADULT").length;
+        const infantsInArray = prev.filter((p) => p.type === "INFANT").length;
+        if (
+          adultsInArray === numberOfAdults &&
+          infantsInArray === numberOfInfants
+        ) {
+          return prev;
+        }
       }
 
       const nextPassengers: Passenger[] = [];
+
+      // Add adults
       for (let i = 0; i < numberOfAdults; i++) {
-        nextPassengers.push(prev[i] ?? createEmptyPassenger());
+        const existingAdult = prev.find(
+          (p, idx) =>
+            p.type === "ADULT" &&
+            prev.slice(0, idx).filter((pp) => pp.type === "ADULT").length === i
+        );
+        nextPassengers.push(existingAdult ?? createEmptyPassenger());
       }
+
+      // Add infants
+      for (let i = 0; i < numberOfInfants; i++) {
+        const existingInfant = prev.find(
+          (p, idx) =>
+            p.type === "INFANT" &&
+            prev.slice(0, idx).filter((pp) => pp.type === "INFANT").length === i
+        );
+        nextPassengers.push(
+          existingInfant ?? {
+            ...createEmptyPassenger(),
+            type: "INFANT" as const,
+          }
+        );
+      }
+
       return nextPassengers;
     });
-  }, [numberOfAdults]);
+  }, [numberOfAdults, numberOfInfants]);
 
   // Handle seat selection when number of adults changes
   useEffect(() => {
@@ -950,14 +1050,118 @@ const BookModal: React.FC<BookModalProps> = ({
     )
       return false;
 
-    // Check if all adult passengers have required info (files are optional)
+    // Check if all passengers have required info (files are optional)
     for (const passenger of passengers) {
-      if (!passenger.name || !passenger.passportNumberOrIdNumber) return false;
-      // Passport/ID should be at least 3 characters
-      if (passenger.passportNumberOrIdNumber.trim().length < 3) return false;
+      // All passengers must have a name
+      if (!passenger.name || passenger.name.trim().length === 0) return false;
+
+      // Adults must have passport/ID number with at least 3 characters
+      if (passenger.type === "ADULT") {
+        if (
+          !passenger.passportNumberOrIdNumber ||
+          passenger.passportNumberOrIdNumber.trim().length < 3
+        ) {
+          return false;
+        }
+      }
+      // Infants should have ID number if provided, but it's optional
+      // If provided, it should be at least 3 characters
+      else if (passenger.type === "INFANT") {
+        if (
+          passenger.passportNumberOrIdNumber &&
+          passenger.passportNumberOrIdNumber.trim().length > 0
+        ) {
+          if (passenger.passportNumberOrIdNumber.trim().length < 3) {
+            return false;
+          }
+        }
+      }
     }
 
     return true;
+  };
+
+  // Validate form and return specific error messages
+  const validateBookingForm = (): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+
+    // Contact Information Validation
+    if (!bookerName || bookerName.trim().length === 0) {
+      errors.push("Please enter your full name");
+    }
+
+    if (!bookerEmail || bookerEmail.trim().length === 0) {
+      errors.push("Please enter your email address");
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookerEmail)) {
+      errors.push("Please enter a valid email address");
+    }
+
+    if (!bookerPhone || bookerPhone.trim().length === 0) {
+      errors.push("Please enter your phone number");
+    } else if (!validatePhone(bookerPhone)) {
+      errors.push("Phone number must be at least 10 digits");
+    }
+
+    // Seat Selection Validation
+    if (seats.length === 0 || seatError) {
+      errors.push("Seat map is not available. Please try again later");
+    } else if (selectedSeats.length === 0) {
+      errors.push(`Please select ${numberOfAdults} seat(s) for adults`);
+    } else if (selectedSeats.length < numberOfAdults) {
+      errors.push(
+        `Please select ${numberOfAdults} seat(s). You have selected ${selectedSeats.length}`
+      );
+    } else if (selectedSeats.some((seatId) => !isValidUUID(seatId))) {
+      errors.push(
+        "Some selected seats are invalid. Please reselect your seats"
+      );
+    }
+
+    // Price Validation
+    if (selectedPriceValue === undefined) {
+      errors.push("Price information is not available for this trip");
+    }
+
+    // Passenger Information Validation
+    if (passengers.length > 0) {
+      passengers.forEach((passenger, index) => {
+        const passengerLabel = `${
+          passenger.type === "ADULT" ? "Adult" : "Infant"
+        } ${index + 1}`;
+
+        if (!passenger.name || passenger.name.trim().length === 0) {
+          errors.push(`${passengerLabel}: Please enter passenger name`);
+        }
+
+        if (passenger.type === "ADULT") {
+          if (
+            !passenger.passportNumberOrIdNumber ||
+            passenger.passportNumberOrIdNumber.trim().length === 0
+          ) {
+            errors.push(`${passengerLabel}: Please enter passport/ID number`);
+          } else if (passenger.passportNumberOrIdNumber.trim().length < 3) {
+            errors.push(
+              `${passengerLabel}: Passport/ID number must be at least 3 characters`
+            );
+          }
+        } else if (passenger.type === "INFANT") {
+          if (
+            passenger.passportNumberOrIdNumber &&
+            passenger.passportNumberOrIdNumber.trim().length > 0 &&
+            passenger.passportNumberOrIdNumber.trim().length < 3
+          ) {
+            errors.push(
+              `${passengerLabel}: ID number must be at least 3 characters if provided`
+            );
+          }
+        }
+      });
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+    };
   };
 
   const handleSeatClick = (seatId: string) => {
@@ -1044,7 +1248,9 @@ const BookModal: React.FC<BookModalProps> = ({
           `Name: ${file.name}, Size: ${file.size} bytes, Type: ${file.type}`
         );
 
-        updatePassenger(index, "files", [fileData]);
+        // Add file to existing files array (support multiple files)
+        const currentFiles = passengers[index]?.files || [];
+        updatePassenger(index, "files", [...currentFiles, fileData]);
         toast.success("File uploaded successfully", { duration: 2000 });
       };
 
@@ -1075,6 +1281,23 @@ const BookModal: React.FC<BookModalProps> = ({
   };
 
   const handleBooking = async () => {
+    // Validate form and show specific errors
+    const validation = validateBookingForm();
+    if (!validation.isValid) {
+      // Show all validation errors in a toast
+      const errorMessage = `Please complete the following:\n\n${validation.errors.join(
+        "\n"
+      )}`;
+      toast.error(errorMessage, {
+        duration: 6000,
+        style: {
+          maxWidth: "500px",
+          whiteSpace: "pre-line",
+        },
+      });
+      return;
+    }
+
     // Check if user is logged in
     const token = localStorage.getItem("authToken");
     const isLoggedIn = !!token;
@@ -1125,23 +1348,14 @@ const BookModal: React.FC<BookModalProps> = ({
         travelerEmail: bookerEmail,
         travelerPhone: bookerPhone,
         seatIds: selectedSeats,
-        passengers: [
-          ...passengers
-            .filter((p) => p.name.trim() !== "") // Only include passengers with names
-            .map((p) => ({
-              type: p.type,
-              name: p.name.trim(),
-              passportNumberOrIdNumber: p.passportNumberOrIdNumber.trim(),
-              files: Array.isArray(p.files) ? p.files : [],
-            })),
-          // Add infants if any
-          ...Array.from({ length: numberOfInfants }).map((_, i) => ({
-            type: "INFANT" as const,
-            name: `Infant ${i + 1}`,
-            passportNumberOrIdNumber: "",
-            files: [],
+        passengers: passengers
+          .filter((p) => p.name.trim() !== "") // Only include passengers with names
+          .map((p) => ({
+            type: p.type,
+            name: p.name.trim(),
+            passportNumberOrIdNumber: p.passportNumberOrIdNumber.trim(),
+            files: Array.isArray(p.files) ? p.files : [],
           })),
-        ],
       };
 
       console.log(
@@ -1716,7 +1930,7 @@ const BookModal: React.FC<BookModalProps> = ({
                       <div className="relative">
                         <input
                           type="tel"
-                          placeholder="Phone Number (+2001011005130)"
+                          placeholder="Phone Number (+1234567890)"
                           value={bookerPhone}
                           onChange={(e) => handlePhoneChange(e.target.value)}
                           className={`w-full p-4 border-2 rounded-xl focus:ring-2 outline-none transition-all duration-200 font-medium ${
@@ -1819,97 +2033,105 @@ const BookModal: React.FC<BookModalProps> = ({
                         </svg>
                         Passenger Details
                       </h4>
-                      {passengers.map((passenger, index) => (
-                        <div
-                          key={index}
-                          className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-sm"
-                        >
-                          <h5 className="font-bold text-lg text-gray-900 mb-4 flex items-center gap-2">
-                            <div className="w-8 h-8 bg-linear-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                              {index + 1}
-                            </div>
-                            {passenger.type === "ADULT" ? "Adult" : "Infant"}{" "}
-                            {index + 1}
-                          </h5>
-                          <div className="space-y-4">
-                            <input
-                              type="text"
-                              placeholder="Full Name"
-                              value={passenger.name}
-                              onChange={(e) =>
-                                updatePassenger(index, "name", e.target.value)
-                              }
-                              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200 font-medium"
-                            />
-                            <input
-                              type="text"
-                              placeholder={
-                                passenger.type === "ADULT"
-                                  ? "Passport Number or ID Number"
-                                  : "ID Number"
-                              }
-                              value={passenger.passportNumberOrIdNumber}
-                              onChange={(e) =>
-                                updatePassenger(
-                                  index,
-                                  "passportNumberOrIdNumber",
-                                  e.target.value
-                                )
-                              }
-                              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200 font-medium"
-                            />
-                            <div>
-                              <label className="block text-sm font-bold text-gray-700 mb-2">
-                                {passenger.type === "ADULT"
-                                  ? "Passport (Optional)"
-                                  : "Birth Certificate (Optional)"}
-                              </label>
+                      {passengers.map((passenger, index) => {
+                        // Calculate the display number based on type
+                        const passengersOfSameType = passengers
+                          .slice(0, index)
+                          .filter((p) => p.type === passenger.type);
+                        const displayNumber = passengersOfSameType.length + 1;
+
+                        return (
+                          <div
+                            key={index}
+                            className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-sm"
+                          >
+                            <h5 className="font-bold text-lg text-gray-900 mb-4 flex items-center gap-2">
+                              <div className="w-8 h-8 bg-linear-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                {displayNumber}
+                              </div>
+                              {passenger.type === "ADULT" ? "Adult" : "Infant"}{" "}
+                              {displayNumber}
+                            </h5>
+                            <div className="space-y-4">
                               <input
-                                type="file"
-                                accept={
-                                  passenger.type === "ADULT"
-                                    ? "image/*"
-                                    : "application/pdf,image/*"
+                                type="text"
+                                placeholder="Full Name"
+                                value={passenger.name}
+                                onChange={(e) =>
+                                  updatePassenger(index, "name", e.target.value)
                                 }
-                                onChange={(e) => handleFileUpload(index, e)}
-                                className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 outline-none transition-all duration-200 font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+                                className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200 font-medium"
                               />
-                              {passenger.files?.length ? (
-                                <div className="mt-3 space-y-2">
-                                  <p className="text-xs text-gray-500">
-                                    Uploaded files stay attached even if you
-                                    return after logging in again.
-                                  </p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {passenger.files.map((file, fileIdx) => (
-                                      <span
-                                        key={`${file.originalFilename}-${fileIdx}`}
-                                        className="flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 text-orange-700 text-xs font-semibold border border-orange-200"
-                                      >
-                                        {file.originalFilename ||
-                                          "Uploaded document"}
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleRemovePassengerFile(
-                                              index,
-                                              fileIdx
-                                            )
-                                          }
-                                          className="text-orange-500 hover:text-orange-700"
-                                          aria-label="Remove file"
+                              <input
+                                type="text"
+                                placeholder={
+                                  passenger.type === "ADULT"
+                                    ? "Passport Number or ID Number"
+                                    : "ID Number (Optional)"
+                                }
+                                value={passenger.passportNumberOrIdNumber}
+                                onChange={(e) =>
+                                  updatePassenger(
+                                    index,
+                                    "passportNumberOrIdNumber",
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200 font-medium"
+                              />
+                              <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">
+                                  {passenger.type === "ADULT"
+                                    ? "Passport (Optional)"
+                                    : "Birth Certificate (Optional)"}
+                                </label>
+                                <input
+                                  type="file"
+                                  accept={
+                                    passenger.type === "ADULT"
+                                      ? "image/*"
+                                      : "application/pdf,image/*"
+                                  }
+                                  onChange={(e) => handleFileUpload(index, e)}
+                                  className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 outline-none transition-all duration-200 font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+                                />
+                                {passenger.files?.length ? (
+                                  <div className="mt-3 space-y-2">
+                                    <p className="text-xs text-gray-500">
+                                      Uploaded files stay attached even if you
+                                      return after logging in again.
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {passenger.files.map((file, fileIdx) => (
+                                        <span
+                                          key={`${file.originalFilename}-${fileIdx}`}
+                                          className="flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 text-orange-700 text-xs font-semibold border border-orange-200"
                                         >
-                                          ×
-                                        </button>
-                                      </span>
-                                    ))}
+                                          {file.originalFilename ||
+                                            "Uploaded document"}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleRemovePassengerFile(
+                                                index,
+                                                fileIdx
+                                              )
+                                            }
+                                            className="text-orange-500 hover:text-orange-700"
+                                            aria-label="Remove file"
+                                          >
+                                            ×
+                                          </button>
+                                        </span>
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              ) : null}
+                                ) : null}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -1994,6 +2216,64 @@ const BookModal: React.FC<BookModalProps> = ({
                         />
                       </div>
                     </div>
+                    <div className="mt-6 p-4 bg-linear-to-r from-teal-50 to-blue-50 rounded-xl border border-teal-200">
+                      <h5 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                        <svg
+                          className="w-5 h-5 text-teal-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                          />
+                        </svg>
+                        Price Breakdown
+                      </h5>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700">
+                            <span className="font-semibold">
+                              {selectedSeats.length || numberOfAdults}
+                            </span>{" "}
+                            {selectedTripType === "ROUND_TRIP"
+                              ? "Round-Trip"
+                              : "One-Way"}{" "}
+                            Seat
+                            {(selectedSeats.length || numberOfAdults) > 1
+                              ? "s"
+                              : ""}
+                          </span>
+                          <span className="font-semibold text-gray-900">
+                            {formatCurrencyValue(seatTotal)}
+                          </span>
+                        </div>
+                        {numberOfInfants > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-700">
+                              <span className="font-semibold">
+                                {numberOfInfants}
+                              </span>{" "}
+                              Infant{numberOfInfants > 1 ? "s" : ""}
+                            </span>
+                            <span className="font-semibold text-gray-900">
+                              {formatCurrencyValue(infantsTotal)}
+                            </span>
+                          </div>
+                        )}
+                        <div className="border-t border-teal-300 pt-2 mt-2 flex justify-between items-center">
+                          <span className="font-bold text-gray-900">
+                            Total Amount
+                          </span>
+                          <span className="text-lg font-bold text-teal-700">
+                            {formattedTotalAmount}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                     <p className="text-sm text-gray-500 mt-4">
                       Total updates automatically as you change seats, trip
                       type, or infant count.
@@ -2017,7 +2297,7 @@ const BookModal: React.FC<BookModalProps> = ({
                     </button>
                     <button
                       onClick={handleBooking}
-                      disabled={isLoading || !isFormValid()}
+                      disabled={isLoading}
                       className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 rounded-xl bg-linear-to-r from-[#179FDB] to-[#0f7ac3] text-white hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none text-sm sm:text-base"
                     >
                       {isLoading ? (
