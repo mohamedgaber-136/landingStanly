@@ -21,6 +21,8 @@ interface Trip {
   seatMap?: any;
   oneWayBasePrice?: number;
   roundTripBasePrice?: number;
+  basePrice?: number;
+  infantPrice?: number;
   currency?: string;
 }
 
@@ -106,9 +108,7 @@ const formatTripPriceLabel = (trip: any): string => {
         })} ${DEFAULT_CURRENCY}`
       : `— ${DEFAULT_CURRENCY}`;
   const oneWayValue =
-    parsePriceValue(trip?.oneWayBasePrice) ??
-    seatOneWayFallback ??
-    fallback;
+    parsePriceValue(trip?.oneWayBasePrice) ?? seatOneWayFallback ?? fallback;
   const roundTripValue =
     parsePriceValue(trip?.roundTripBasePrice) ??
     seatRoundTripFallback ??
@@ -555,8 +555,7 @@ export default function Home() {
           toast("Restoring your trip data...", { duration: 2000 });
 
           // Create a temporary search result with the stored trip data
-          const tempCurrency =
-            bookingData.originalTripData?.currency || "EGP";
+          const tempCurrency = bookingData.originalTripData?.currency || "EGP";
           const tempOneWay = bookingData.originalTripData?.oneWayBasePrice;
           const tempRoundTrip =
             bookingData.originalTripData?.roundTripBasePrice;
@@ -676,6 +675,7 @@ export default function Home() {
       const seatOneWayFallback = getSeatFallbackPrice(trip, "ONE_WAY");
       const seatRoundTripFallback = getSeatFallbackPrice(trip, "ROUND_TRIP");
       const basePrice = parsePriceValue(trip?.basePrice);
+      const infantPrice = parsePriceValue(trip?.infantPrice);
       const normalizedOneWay =
         parsePriceValue(trip?.oneWayBasePrice) ??
         seatOneWayFallback ??
@@ -704,6 +704,8 @@ export default function Home() {
         seatMap: normalizedSeatMap,
         oneWayBasePrice: normalizedOneWay,
         roundTripBasePrice: normalizedRoundTrip,
+        basePrice: basePrice,
+        infantPrice: infantPrice,
         currency: DEFAULT_CURRENCY,
       };
     });
