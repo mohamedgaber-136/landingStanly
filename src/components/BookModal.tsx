@@ -1205,12 +1205,14 @@ const BookModal: React.FC<BookModalProps> = ({
     index: number,
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = event.target.files?.[0];
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
     if (file) {
-      // Check file size (max 5MB)
-      const maxSize = 5 * 1024 * 1024; // 5MB
+      // Check file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
       if (file.size > maxSize) {
-        toast.error("File size must be less than 5MB", { duration: 4000 });
+        toast.error("File size must be less than 10MB", { duration: 4000 });
+        input.value = "";
         return;
       }
 
@@ -1218,6 +1220,7 @@ const BookModal: React.FC<BookModalProps> = ({
       const allowedTypes = ["image/jpeg", "image/png", "application/pdf"];
       if (!allowedTypes.includes(file.type)) {
         toast.error("File type must be JPEG, PNG, or PDF", { duration: 4000 });
+        input.value = "";
         return;
       }
 
@@ -1230,6 +1233,7 @@ const BookModal: React.FC<BookModalProps> = ({
           toast.error("Failed to read file. Please try again.", {
             duration: 4000,
           });
+          input.value = "";
           return;
         }
 
@@ -1258,6 +1262,11 @@ const BookModal: React.FC<BookModalProps> = ({
         toast.error("Failed to read file. Please try again.", {
           duration: 4000,
         });
+        try {
+          input.value = "";
+        } catch (e) {
+          /* ignore */
+        }
       };
 
       reader.readAsDataURL(file);
@@ -1341,9 +1350,10 @@ const BookModal: React.FC<BookModalProps> = ({
       const apiUrl =
         process.env.NEXT_PUBLIC_API_URL || "https://api.stanlyegypt.com/api/v1";
 
-      // Step 1: Create booking
+      // Step 1: Create booking payload matching backend schema
       const bookingData = {
         tripId: tripData.id,
+        bookingType: selectedTripType, // "ONE_WAY" | "ROUND_TRIP"
         travelerName: bookerName,
         travelerEmail: bookerEmail,
         travelerPhone: bookerPhone,
@@ -1354,7 +1364,13 @@ const BookModal: React.FC<BookModalProps> = ({
             type: p.type,
             name: p.name.trim(),
             passportNumberOrIdNumber: p.passportNumberOrIdNumber.trim(),
-            files: Array.isArray(p.files) ? p.files : [],
+            // Backend expects files with only `type` and `base64Content`
+            files: Array.isArray(p.files)
+              ? p.files.map((f) => ({
+                  type: f.type,
+                  base64Content: f.base64Content,
+                }))
+              : [],
           })),
       };
 
