@@ -69,7 +69,7 @@ const SignUpSection: React.FC = () => {
         {/* Left Image */}
         <div className="w-1/2 md:block hidden">
           <Image
-            src="/siwa.jpg"
+            src="/Media.jpg"
             alt="page img"
             width={700}
             height={100}

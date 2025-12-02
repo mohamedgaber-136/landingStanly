@@ -62,7 +62,7 @@ const LoginSection: React.FC = () => {
     }
   };
   return (
-    <section className="border-red-500 bg-gray-200 p-3 min-h-screen flex items-center justify-center">
+    <section className="p-3 min-h-screen flex items-center justify-center">
       <div className="bg-gray-100 p-5 flex rounded-2xl shadow-lg max-w-3xl w-full">
         {/* Left Form */}
         <div className="md:w-1/2 px-5 w-full">
@@ -144,7 +144,7 @@ const LoginSection: React.FC = () => {
         {/* Right Image */}
         <div className="w-1/2 md:block hidden">
           <Image
-            src="/siwa.jpg"
+            src="/Media.jpg"
             alt="page img"
             width={700}
             height={100}

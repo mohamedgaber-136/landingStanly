@@ -13,28 +13,17 @@ import {
   openInvoicePDF,
   type BookingData,
 } from "@/utils/pdfGenerator";
-
-interface Passenger {
-  type: "ADULT" | "INFANT";
-  name: string;
-  passportNumberOrIdNumber: string;
-  files: {
-    type: "PASSPORT" | "BIRTH_CERTIFICATE";
-    originalFilename: string;
-    mimeType: string;
-    base64Content: string;
-  }[];
-}
-
-interface BookModalProps {
-  isModalOpen: boolean;
-  onClose: () => void;
-  from: string;
-  to: string;
-  price: string; // e.g., "$120"
-  availableSeats: number;
-  tripData?: any;
-}
+import SeatSelectionSection from "./bookModal/SeatSelectionSection";
+import PassengerInformationSection from "./bookModal/PassengerInformationSection";
+import PaymentView from "./bookModal/PaymentView";
+import BookingConfirmationView from "./bookModal/BookingConfirmationView";
+import type {
+  Passenger,
+  SeatInfo,
+  SeatRow,
+  BookModalProps,
+  SeatLegendItem,
+} from "./bookModal/types";
 
 const DISPLAY_CURRENCY = "EGP";
 
@@ -68,7 +57,7 @@ const BookModal: React.FC<BookModalProps> = ({
   const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [seats, setSeats] = useState<any[]>([]);
+  const [seats, setSeats] = useState<SeatInfo[]>([]);
   const [isLoadingSeats, setIsLoadingSeats] = useState(false);
   const [seatError, setSeatError] = useState<string | null>(null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
@@ -100,7 +89,7 @@ const BookModal: React.FC<BookModalProps> = ({
    * - roundTripBasePrice = price for round-trip journey (both directions)
    */
   const pickSeatPrice = useCallback(
-    (seat: any, tripType: "ONE_WAY" | "ROUND_TRIP") => {
+    (seat: SeatInfo | undefined, tripType: "ONE_WAY" | "ROUND_TRIP") => {
       if (!seat) return undefined;
 
       // Select the primary price based on trip type
@@ -270,6 +259,82 @@ const BookModal: React.FC<BookModalProps> = ({
     baseTripPrice,
     parsePriceValue,
   ]);
+
+  const defaultOneWayPrice = useMemo(
+    () => parsePriceValue(tripData?.oneWayBasePrice) ?? baseTripPrice,
+    [parsePriceValue, tripData?.oneWayBasePrice, baseTripPrice]
+  );
+
+  const defaultRoundTripPrice = useMemo(
+    () => parsePriceValue(tripData?.roundTripBasePrice) ?? baseTripPrice,
+    [parsePriceValue, tripData?.roundTripBasePrice, baseTripPrice]
+  );
+
+  const sortedSeats = useMemo(
+    () =>
+      [...seats].sort((a, b) =>
+        (a?.seatNumber || "").localeCompare(b?.seatNumber || "", undefined, {
+          numeric: true,
+          sensitivity: "base",
+        })
+      ),
+    [seats]
+  );
+
+  const seatRows = useMemo(() => {
+    if (sortedSeats.length === 0) {
+      return [] as SeatRow[];
+    }
+
+    const rows: SeatRow[] = [];
+    for (let i = 0; i < sortedSeats.length; i += 4) {
+      const rowSeats = sortedSeats.slice(i, i + 4);
+      rows.push({
+        left: [rowSeats[0] ?? null, rowSeats[1] ?? null],
+        right: [rowSeats[2] ?? null, rowSeats[3] ?? null],
+      });
+    }
+    return rows;
+  }, [sortedSeats]);
+
+  const cabinColumnLabels = useMemo(
+    () => ({ left: ["A", "B"], right: ["C", "D"] }),
+    []
+  );
+
+  const getRowLabel = useCallback((row: SeatRow, fallbackIndex: number) => {
+    const seatWithNumber = [...row.left, ...row.right].find(
+      (seat) => seat?.seatNumber
+    );
+    if (!seatWithNumber?.seatNumber) {
+      return fallbackIndex.toString();
+    }
+    const match = seatWithNumber.seatNumber.match(/(\d+)/);
+    return match?.[1] ?? seatWithNumber.seatNumber;
+  }, []);
+
+  const getSeatPricingDetails = useCallback(
+    (seat: SeatInfo | undefined) => {
+      const seatOneWay = pickSeatPrice(seat, "ONE_WAY");
+      const seatRoundTrip = pickSeatPrice(seat, "ROUND_TRIP");
+      const differs = (seatValue?: number, baseValue?: number) => {
+        if (typeof seatValue === "number" && typeof baseValue === "number") {
+          return Math.abs(seatValue - baseValue) > 0.009;
+        }
+        if (typeof seatValue === "number" && typeof baseValue !== "number") {
+          return true;
+        }
+        return false;
+      };
+
+      const hasCustomPricing =
+        differs(seatOneWay, defaultOneWayPrice) ||
+        differs(seatRoundTrip, defaultRoundTripPrice);
+
+      return { seatOneWay, seatRoundTrip, hasCustomPricing };
+    },
+    [defaultOneWayPrice, defaultRoundTripPrice, pickSeatPrice]
+  );
   const selectedPriceValue =
     selectedTripType === "ROUND_TRIP" ? roundTripPrice : oneWayPrice;
   const selectedPriceLabel = useMemo(
@@ -1189,6 +1254,108 @@ const BookModal: React.FC<BookModalProps> = ({
     }
   };
 
+  const seatLegendItems: SeatLegendItem[] = [
+    { label: "Available", className: "bg-white border-gray-300" },
+ 
+    {
+      label: "Selected",
+      className:
+        "bg-gradient-to-br from-[#179FDB] to-[#0f7ac3] border-[#0f7ac3] text-white",
+    },
+    { label: "Booked", className: "bg-red-500 border-red-400 text-white" },
+  ];
+
+  const renderSeatNode = (seat: SeatInfo | null, key: string) => {
+    if (!seat) {
+      return (
+        <div
+          key={key}
+          className="w-12 h-12 sm:w-14 sm:h-14 opacity-0 pointer-events-none"
+          aria-hidden
+        />
+      );
+    }
+
+    const { seatOneWay, seatRoundTrip, hasCustomPricing } =
+      getSeatPricingDetails(seat);
+    const isSelected = selectedSeats.includes(seat.id);
+    const isUnavailable = !seat.isAvailable;
+    const hasAnyPrice =
+      typeof seatOneWay === "number" || typeof seatRoundTrip === "number";
+    const seatLabel = seat.seatNumber || "—";
+    const seatDigits = seatLabel.replace(/\D+/g, "") || seatLabel;
+    const seatLetters = seatLabel.replace(/[0-9]/g, "") || "Seat";
+
+    let buttonClasses =
+      "w-12 h-14 sm:w-14 sm:h-16 flex flex-col items-center justify-center rounded-2xl border bg-gray-300 text-black font-semibold text-xs sm:text-sm transition-colors duration-200 shadow-sm";
+
+    if (isUnavailable) {
+      buttonClasses += " bg-red-500 border-red-400 text-white cursor-not-allowed";
+    } else if (isSelected) {
+      buttonClasses +=
+        " bg-green-600 text-white shadow-lg";
+    } 
+     else {
+      buttonClasses += " bg-white border-gray-300 text-blue-900 hover:bg-gray-50";
+    }
+
+    const priceTextClass = isSelected
+      ? "text-[#0f7ac3]"
+      : "text-gray-600 dark:text-gray-400";
+
+    return (
+      <div
+        key={seat.id}
+        className="flex flex-col items-center gap-1 text-center w-16 sm:w-20"
+      >
+        <button
+          type="button"
+          onClick={() => handleSeatClick(seat.id)}
+          disabled={isUnavailable}
+          className={buttonClasses}
+          aria-pressed={isSelected}
+          aria-label={`Seat ${seat.seatNumber}`}
+          title={`${seatLabel} • OW ${formatCurrencyValue(
+            seatOneWay
+          )} | RT ${formatCurrencyValue(seatRoundTrip)}`}
+        >
+          <span className="text-[10px] uppercase tracking-[0.3em] ">
+            {seatLetters}
+          </span>
+          <span className="text-sm sm:text-base font-bold leading-none">
+            {seatDigits}
+          </span>
+        </button>
+        <div
+          className={`flex flex-col gap-1 text-[10px] sm:text-[11px] leading-tight font-medium ${priceTextClass}`}
+        >
+          <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white text-gray-700 border border-gray-200 shadow-sm">
+            <span className="text-[9px] font-semibold mr-1">OW</span>
+            {formatCurrencyValue(seatOneWay)}
+          </span>
+          <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white text-gray-700 border border-gray-200 shadow-sm">
+            <span className="text-[9px] font-semibold mr-1">RT</span>
+            {formatCurrencyValue(seatRoundTrip)}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const handleOpenInvoice = useCallback(() => {
+    if (!invoiceData) {
+      return;
+    }
+    try {
+      openInvoicePDF(invoiceData);
+      toast.success("Opening PDF invoice in new tab...", { duration: 3000 });
+    } catch (error) {
+      toast.error("Failed to open PDF. Please try again.", {
+        duration: 4000,
+      });
+    }
+  }, [invoiceData]);
+
   const updatePassenger = (
     index: number,
     field: keyof Passenger,
@@ -1539,806 +1706,66 @@ const BookModal: React.FC<BookModalProps> = ({
 
           {/* Content */}
           <div className="overflow-y-auto max-h-[calc(95vh-80px)] sm:max-h-[calc(90vh-120px)] p-4 sm:p-6 lg:p-8">
-            {/* Booking confirmation view */}
             {bookingConfirmed ? (
-              <div className="text-center space-y-6 sm:space-y-8 py-4 sm:py-8">
-                <div className="mx-auto w-20 h-20 sm:w-24 sm:h-24 bg-linear-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-lg">
-                  <svg
-                    className="w-8 h-8 sm:w-10 sm:h-10 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={3}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                </div>
-
-                <div className="space-y-2 sm:space-y-3">
-                  <h3 className="text-2xl sm:text-3xl font-bold text-green-600">
-                    Payment Successful!
-                  </h3>
-                  <p className="text-base sm:text-lg text-gray-600 px-4">
-                    Your trip has been booked successfully.
-                  </p>
-                </div>
-
-                <div className="bg-linear-to-br from-gray-50 to-gray-100 rounded-2xl p-4 sm:p-6 lg:p-8 text-left max-w-full sm:max-w-md mx-auto border border-gray-200">
-                  <h4 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6 text-gray-900 flex items-center gap-2">
-                    <svg
-                      className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
-                    Booking Summary
-                  </h4>
-                  <div className="space-y-3 sm:space-y-4">
-                    {bookingDetails?.bookingId && (
-                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                        <span className="text-gray-600 font-medium text-sm sm:text-base">
-                          Booking ID:
-                        </span>
-                        <span className="font-bold text-blue-600 text-sm sm:text-base text-right">
-                          {bookingDetails.bookingId.slice(-8).toUpperCase()}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                      <span className="text-gray-600 font-medium text-sm sm:text-base">
-                        Route:
-                      </span>
-                      <span className="font-bold text-gray-900 text-sm sm:text-base text-right">
-                        {bookingDetails?.from} → {bookingDetails?.to}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                      <span className="text-gray-600 font-medium text-sm sm:text-base">
-                        Price:
-                      </span>
-                      <span className="font-bold text-green-600 text-sm sm:text-base">
-                        {bookingDetails?.price}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                      <span className="text-gray-600 font-medium text-sm sm:text-base">
-                        Seats:
-                      </span>
-                      <span className="font-bold text-gray-900 text-sm sm:text-base">
-                        {bookingDetails?.selectedSeats?.length} seat(s)
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                      <span className="text-gray-600 font-medium text-sm sm:text-base">
-                        Passengers:
-                      </span>
-                      <span className="font-bold text-gray-900 text-sm sm:text-base">
-                        {bookingDetails?.passengers?.length} passenger(s)
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-2">
-                      <span className="text-gray-600 font-medium text-sm sm:text-base">
-                        Booked by:
-                      </span>
-                      <span className="font-bold text-gray-900 text-sm sm:text-base text-right">
-                        {bookingDetails?.bookerName}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3 sm:space-y-4">
-                  <div className="bg-blue-50 rounded-xl p-3 sm:p-4 border border-blue-200 mx-2 sm:mx-0">
-                    <p className="text-blue-800 font-medium flex items-center gap-2 text-sm sm:text-base">
-                      <svg
-                        className="w-4 h-4 sm:w-5 sm:h-5 shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 8l7.89 7.89a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <span className="break-all">
-                        Confirmation email sent to {bookingDetails?.bookerEmail}
-                      </span>
-                    </p>
-                  </div>
-
-                  {bookingDetails?.bookingId && (
-                    <div className="bg-green-50 rounded-xl p-3 sm:p-4 border border-green-200 mx-2 sm:mx-0">
-                      <p className="text-green-800 font-medium flex items-center gap-2 text-sm sm:text-base">
-                        <svg
-                          className="w-4 h-4 sm:w-5 sm:h-5 shrink-0"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                          />
-                        </svg>
-                        Invoice ready - use "Print PDF" button below
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full">
-                    {invoiceData && (
-                      <button
-                        onClick={() => {
-                          try {
-                            openInvoicePDF(invoiceData);
-                            toast.success("Opening PDF invoice in new tab...", {
-                              duration: 3000,
-                            });
-                          } catch (error) {
-                            toast.error(
-                              "Failed to open PDF. Please try again.",
-                              {
-                                duration: 4000,
-                              }
-                            );
-                          }
-                        }}
-                        className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 bg-linear-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-300 font-semibold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-2"
-                      >
-                        <svg
-                          className="w-5 h-5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
-                          />
-                        </svg>
-                        Print PDF
-                      </button>
-                    )}
-                    <button
-                      onClick={handleModalClose}
-                      className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 bg-linear-to-r from-[#179FDB] to-[#0f7ac3] text-white rounded-xl hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 font-semibold text-base sm:text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <BookingConfirmationView
+                bookingDetails={bookingDetails}
+                invoiceData={invoiceData}
+                onOpenInvoice={handleOpenInvoice}
+                onClose={handleModalClose}
+              />
             ) : showPayment && paymentUrl ? (
-              <div className="space-y-4 sm:space-y-6">
-                <div className="bg-linear-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 sm:p-6">
-                  <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
-                    <div className="w-2 h-2 sm:w-3 sm:h-3 bg-blue-500 rounded-full animate-pulse"></div>
-                    <h3 className="text-lg sm:text-xl font-bold text-blue-900">
-                      {isLoading
-                        ? "Processing Payment..."
-                        : "Complete Your Payment"}
-                    </h3>
-                  </div>
-                  <p className="text-blue-700 font-medium text-sm sm:text-base">
-                    {isLoading
-                      ? "Please wait while we process your request..."
-                      : "Complete your payment below to confirm your booking"}
-                  </p>
-                </div>
-
-                <div className="border-2 border-gray-200 rounded-xl sm:rounded-2xl overflow-hidden shadow-lg bg-white">
-                  <iframe
-                    src={paymentUrl}
-                    width="100%"
-                    height="500"
-                    className="border-0 sm:h-[650px]"
-                    title="Payment Gateway"
-                    style={{ minHeight: "500px" }}
-                  />
-                </div>
-
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 sm:pt-6 border-t-2 border-gray-100 bg-linear-to-r from-gray-50 to-gray-100 p-4 sm:p-6 rounded-2xl">
-                  <button
-                    onClick={handleCancelBooking}
-                    disabled={isLoading}
-                    className="w-full sm:w-auto px-4 py-2 sm:px-6 sm:py-3 text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm text-sm sm:text-base"
-                  >
-                    {isLoading ? "Cancelling..." : "← Back to Booking"}
-                  </button>
-                  <div className="text-center order-first sm:order-0">
-                    <div className="text-xs sm:text-sm text-gray-600 font-medium">
-                      Secure payment powered by
-                    </div>
-                    <div className="text-base sm:text-lg font-bold text-blue-600">
-                      Paymob
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <PaymentView
+                paymentUrl={paymentUrl}
+                isLoading={isLoading}
+                onCancelBooking={handleCancelBooking}
+              />
             ) : (
-              /* Modern responsive booking form */
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-10">
-                {/* Left Column - Seat Selection */}
-                <div className="space-y-4 sm:space-y-6">
-                  <div className="bg-linear-to-r from-blue-50 to-indigo-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-blue-200">
-                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-                      <svg
-                        className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                      </svg>
-                      Select Seats
-                    </h3>
-                    <p className="text-blue-700 font-medium text-sm sm:text-base">
-                      Select {numberOfAdults} seat
-                      {numberOfAdults > 1 ? "s" : ""} for adults
-                      {numberOfInfants > 0 &&
-                        ` (${numberOfInfants} infant${
-                          numberOfInfants > 1 ? "s" : ""
-                        } will share)`}
-                    </p>
-                  </div>
-
-                  <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 border-2 border-gray-100 shadow-sm">
-                    {isLoadingSeats ? (
-                      <div className="text-center py-6 text-sm text-gray-500">
-                        Loading seats...
-                      </div>
-                    ) : seatError ? (
-                      <div className="text-center py-6 text-sm text-red-600">
-                        {seatError}
-                      </div>
-                    ) : seats.length === 0 ? (
-                      <div className="text-center py-6 text-sm text-gray-500">
-                        Seat map is unavailable for this trip.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-4 gap-2 sm:gap-3 max-w-sm sm:max-w-md mx-auto">
-                        {seats.map((seat: any) => {
-                          const { oneWayLabel, roundTripLabel } =
-                            formatSeatPrice(seat);
-                          return (
-                            <button
-                              key={seat.id}
-                              onClick={() => handleSeatClick(seat.id)}
-                              disabled={!seat.isAvailable}
-                              className={`
-                                p-2 sm:p-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold border-2 transition-all duration-200 transform hover:scale-105
-                                ${
-                                  !seat.isAvailable
-                                    ? "bg-gray-200 text-gray-500 cursor-not-allowed border-gray-300"
-                                    : selectedSeats.includes(seat.id)
-                                    ? "bg-linear-to-br from-[#179FDB] to-[#0f7ac3] text-white border-[#179FDB] shadow-lg"
-                                    : "bg-white border-gray-300 hover:border-[#179FDB] hover:bg-blue-50 text-gray-700"
-                                }
-                              `}
-                            >
-                              <span className="block text-sm sm:text-base leading-none">
-                                {seat.seatNumber}
-                              </span>
-                              <span className="block text-[10px] sm:text-xs font-normal text-gray-600 mt-1">
-                                {oneWayLabel}
-                              </span>
-                              <span className="block text-[10px] sm:text-xs font-normal text-gray-600">
-                                {roundTripLabel}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {seats.length > 0 && !seatError ? (
-                      <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-6 mt-4 sm:mt-6 text-xs sm:text-sm">
-                        <div className="flex items-center gap-2 justify-center">
-                          <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white border-2 border-gray-300 rounded-lg"></div>
-                          <span className="font-medium text-gray-600">
-                            Available
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 justify-center">
-                          <div className="w-4 h-4 sm:w-5 sm:h-5 bg-linear-to-br from-[#179FDB] to-[#0f7ac3] border-2 border-[#179FDB] rounded-lg"></div>
-                          <span className="font-medium text-gray-600">
-                            Selected
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 justify-center">
-                          <div className="w-4 h-4 sm:w-5 sm:h-5 bg-gray-200 border-2 border-gray-300 rounded-lg"></div>
-                          <span className="font-medium text-gray-600">
-                            Occupied
-                          </span>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Right Column - Passenger Information */}
-                <div className="space-y-4 sm:space-y-6">
-                  <div className="bg-linear-to-r from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200">
-                    <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                      <svg
-                        className="w-6 h-6 text-green-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                        />
-                      </svg>
-                      Passenger Information
-                    </h3>
-                  </div>
-
-                  {/* Contact Information Card */}
-                  <div className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-sm">
-                    <h4 className="font-bold text-lg text-gray-900 mb-4 flex items-center gap-2">
-                      <svg
-                        className="w-5 h-5 text-blue-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 8l7.89 7.89a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                        />
-                      </svg>
-                      Contact Information
-                    </h4>
-                    <div className="space-y-4">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Full Name"
-                          value={bookerName}
-                          onChange={(e) => setBookerName(e.target.value)}
-                          className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200 font-medium"
-                        />
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="email"
-                          placeholder="Email Address"
-                          value={bookerEmail}
-                          onChange={(e) => setBookerEmail(e.target.value)}
-                          className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200 font-medium"
-                        />
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="tel"
-                          placeholder="Phone Number (+1234567890)"
-                          value={bookerPhone}
-                          onChange={(e) => handlePhoneChange(e.target.value)}
-                          className={`w-full p-4 border-2 rounded-xl focus:ring-2 outline-none transition-all duration-200 font-medium ${
-                            phoneError
-                              ? "border-red-400 focus:border-red-500 focus:ring-red-200 bg-red-50"
-                              : "border-gray-200 focus:border-blue-500 focus:ring-blue-200"
-                          }`}
-                        />
-                        {phoneError && (
-                          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <p className="text-red-600 text-sm font-medium flex items-center gap-2">
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                              </svg>
-                              {phoneError}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Number of Passengers */}
-                  <div className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-sm">
-                    <h4 className="font-bold text-lg text-gray-900 mb-4 flex items-center gap-2">
-                      <svg
-                        className="w-5 h-5 text-purple-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                        />
-                      </svg>
-                      Number of Passengers
-                    </h4>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block font-bold text-gray-700 mb-3">
-                          Adults
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          max={availableSeats}
-                          value={numberOfAdults}
-                          onChange={(e) =>
-                            setNumberOfAdults(Number(e.target.value))
-                          }
-                          className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all duration-200 font-medium text-center text-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-gray-700 mb-3">
-                          Infants
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={numberOfInfants}
-                          onChange={(e) =>
-                            setNumberOfInfants(Number(e.target.value))
-                          }
-                          className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all duration-200 font-medium text-center text-lg"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Passenger Details */}
-                  {passengers.length > 0 && (
-                    <div className="space-y-4">
-                      <h4 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                        <svg
-                          className="w-5 h-5 text-orange-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                          />
-                        </svg>
-                        Passenger Details
-                      </h4>
-                      {passengers.map((passenger, index) => {
-                        // Calculate the display number based on type
-                        const passengersOfSameType = passengers
-                          .slice(0, index)
-                          .filter((p) => p.type === passenger.type);
-                        const displayNumber = passengersOfSameType.length + 1;
-
-                        return (
-                          <div
-                            key={index}
-                            className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-sm"
-                          >
-                            <h5 className="font-bold text-lg text-gray-900 mb-4 flex items-center gap-2">
-                              <div className="w-8 h-8 bg-linear-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                                {displayNumber}
-                              </div>
-                              {passenger.type === "ADULT" ? "Adult" : "Infant"}{" "}
-                              {displayNumber}
-                            </h5>
-                            <div className="space-y-4">
-                              <input
-                                type="text"
-                                placeholder="Full Name"
-                                value={passenger.name}
-                                onChange={(e) =>
-                                  updatePassenger(index, "name", e.target.value)
-                                }
-                                className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200 font-medium"
-                              />
-                              <input
-                                type="text"
-                                placeholder={
-                                  passenger.type === "ADULT"
-                                    ? "Passport Number or ID Number"
-                                    : "ID Number (Optional)"
-                                }
-                                value={passenger.passportNumberOrIdNumber}
-                                onChange={(e) =>
-                                  updatePassenger(
-                                    index,
-                                    "passportNumberOrIdNumber",
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200 font-medium"
-                              />
-                              <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">
-                                  {passenger.type === "ADULT"
-                                    ? "Passport (Optional)"
-                                    : "Birth Certificate (Optional)"}
-                                </label>
-                                <input
-                                  type="file"
-                                  accept={
-                                    passenger.type === "ADULT"
-                                      ? "image/*"
-                                      : "application/pdf,image/*"
-                                  }
-                                  onChange={(e) => handleFileUpload(index, e)}
-                                  className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 outline-none transition-all duration-200 font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
-                                />
-                                {passenger.files?.length ? (
-                                  <div className="mt-3 space-y-2">
-                                    <p className="text-xs text-gray-500">
-                                      Uploaded files stay attached even if you
-                                      return after logging in again.
-                                    </p>
-                                    <div className="flex flex-wrap gap-2">
-                                      {passenger.files.map((file, fileIdx) => (
-                                        <span
-                                          key={`${file.originalFilename}-${fileIdx}`}
-                                          className="flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 text-orange-700 text-xs font-semibold border border-orange-200"
-                                        >
-                                          {file.originalFilename ||
-                                            "Uploaded document"}
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleRemovePassengerFile(
-                                                index,
-                                                fileIdx
-                                              )
-                                            }
-                                            className="text-orange-500 hover:text-orange-700"
-                                            aria-label="Remove file"
-                                          >
-                                            ×
-                                          </button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Trip Type & Pricing */}
-                  <div className="bg-white rounded-2xl p-6 border-2 border-gray-100 shadow-sm">
-                    <h4 className="font-bold text-lg text-gray-900 mb-4 flex items-center gap-2">
-                      <svg
-                        className="w-5 h-5 text-teal-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2v-7H3v7a2 2 0 002 2z"
-                        />
-                      </svg>
-                      Trip Type & Price
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block font-bold text-gray-700 mb-3">
-                          Trip Type
-                        </label>
-                        <select
-                          value={selectedTripType}
-                          onChange={(e) =>
-                            setSelectedTripType(
-                              e.target.value === "ROUND_TRIP"
-                                ? "ROUND_TRIP"
-                                : "ONE_WAY"
-                            )
-                          }
-                          disabled={
-                            oneWayPrice === undefined &&
-                            roundTripPrice === undefined
-                          }
-                          className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-teal-500 focus:ring-2 focus:ring-teal-200 outline-none transition-all duration-200 font-medium bg-white disabled:opacity-60"
-                        >
-                          <option
-                            value="ONE_WAY"
-                            disabled={oneWayPrice === undefined}
-                          >
-                            One Way
-                            {oneWayPrice !== undefined
-                              ? ` (${formatCurrencyValue(oneWayPrice)})`
-                              : " (Unavailable)"}
-                          </option>
-                          <option
-                            value="ROUND_TRIP"
-                            disabled={roundTripPrice === undefined}
-                          >
-                            Round Trip
-                            {roundTripPrice !== undefined
-                              ? ` (${formatCurrencyValue(roundTripPrice)})`
-                              : " (Unavailable)"}
-                          </option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block font-bold text-gray-700 mb-3">
-                          Selected Price
-                        </label>
-                        <input
-                          type="text"
-                          value={selectedPriceLabel}
-                          disabled
-                          className="w-full p-4 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 font-semibold cursor-not-allowed"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-gray-700 mb-3">
-                          Estimated Total
-                        </label>
-                        <input
-                          type="text"
-                          value={formattedTotalAmount}
-                          disabled
-                          className="w-full p-4 border-2 border-teal-100 rounded-xl bg-gray-50 text-gray-900 font-semibold cursor-not-allowed"
-                        />
-                      </div>
-                    </div>
-                    <div className="mt-6 p-4 bg-linear-to-r from-teal-50 to-blue-50 rounded-xl border border-teal-200">
-                      <h5 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                        <svg
-                          className="w-5 h-5 text-teal-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                          />
-                        </svg>
-                        Price Breakdown
-                      </h5>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-700">
-                            <span className="font-semibold">
-                              {selectedSeats.length || numberOfAdults}
-                            </span>{" "}
-                            {selectedTripType === "ROUND_TRIP"
-                              ? "Round-Trip"
-                              : "One-Way"}{" "}
-                            Seat
-                            {(selectedSeats.length || numberOfAdults) > 1
-                              ? "s"
-                              : ""}
-                          </span>
-                          <span className="font-semibold text-gray-900">
-                            {formatCurrencyValue(seatTotal)}
-                          </span>
-                        </div>
-                        {numberOfInfants > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-gray-700">
-                              <span className="font-semibold">
-                                {numberOfInfants}
-                              </span>{" "}
-                              Infant{numberOfInfants > 1 ? "s" : ""}
-                            </span>
-                            <span className="font-semibold text-gray-900">
-                              {formatCurrencyValue(infantsTotal)}
-                            </span>
-                          </div>
-                        )}
-                        <div className="border-t border-teal-300 pt-2 mt-2 flex justify-between items-center">
-                          <span className="font-bold text-gray-900">
-                            Total Amount
-                          </span>
-                          <span className="text-lg font-bold text-teal-700">
-                            {formattedTotalAmount}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-4">
-                      Total updates automatically as you change seats, trip
-                      type, or infant count.
-                    </p>
-                    {oneWayPrice === undefined &&
-                    roundTripPrice === undefined ? (
-                      <p className="text-sm text-red-500 mt-2">
-                        Pricing is unavailable for this trip. Please pick a
-                        different departure.
-                      </p>
-                    ) : null}
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex flex-col sm:flex-row justify-end gap-3 sm:gap-4 pt-4 sm:pt-6">
-                    <button
-                      onClick={handleModalClose}
-                      className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 rounded-xl border-2 border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-bold text-gray-700 shadow-sm text-sm sm:text-base"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleBooking}
-                      disabled={isLoading}
-                      className="w-full sm:w-auto px-6 py-3 sm:px-8 sm:py-4 rounded-xl bg-linear-to-r from-[#179FDB] to-[#0f7ac3] text-white hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none text-sm sm:text-base"
-                    >
-                      {isLoading ? (
-                        <div className="flex items-center gap-2 justify-center">
-                          <svg
-                            className="animate-spin w-4 h-4 sm:w-5 sm:h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                            />
-                          </svg>
-                          Booking...
-                        </div>
-                      ) : (
-                        "Book Now"
-                      )}
-                    </button>
-                  </div>
-                </div>
+                <SeatSelectionSection
+                  numberOfAdults={numberOfAdults}
+                  numberOfInfants={numberOfInfants}
+                  isLoadingSeats={isLoadingSeats}
+                  seatError={seatError}
+                  seats={seats}
+                  seatLegendItems={seatLegendItems}
+                  seatRows={seatRows}
+                  cabinColumnLabels={cabinColumnLabels}
+                  renderSeatNode={renderSeatNode}
+                  getRowLabel={getRowLabel}
+                  selectedSeatsCount={selectedSeats.length}
+                  requiredSeatsCount={numberOfAdults}
+                />
+                <PassengerInformationSection
+                  bookerName={bookerName}
+                  setBookerName={setBookerName}
+                  bookerEmail={bookerEmail}
+                  setBookerEmail={setBookerEmail}
+                  bookerPhone={bookerPhone}
+                  handlePhoneChange={handlePhoneChange}
+                  phoneError={phoneError}
+                  availableSeats={availableSeats}
+                  numberOfAdults={numberOfAdults}
+                  setNumberOfAdults={setNumberOfAdults}
+                  numberOfInfants={numberOfInfants}
+                  setNumberOfInfants={setNumberOfInfants}
+                  passengers={passengers}
+                  updatePassenger={updatePassenger}
+                  handleFileUpload={handleFileUpload}
+                  handleRemovePassengerFile={handleRemovePassengerFile}
+                  selectedTripType={selectedTripType}
+                  setSelectedTripType={setSelectedTripType}
+                  oneWayPrice={oneWayPrice}
+                  roundTripPrice={roundTripPrice}
+                  formatCurrencyValue={formatCurrencyValue}
+                  selectedPriceLabel={selectedPriceLabel}
+                  formattedTotalAmount={formattedTotalAmount}
+                  seatTotal={seatTotal}
+                  infantsTotal={infantsTotal}
+                  selectedSeatsCount={selectedSeats.length}
+                  handleModalClose={handleModalClose}
+                  handleBooking={handleBooking}
+                  isLoading={isLoading}
+                />
               </div>
             )}
           </div>

@@ -580,7 +580,7 @@ export default function Home() {
             flightNumber:
               bookingData.originalTripData?.flightNumber || "TEMP001",
             price: tempPriceLabel,
-            image: "/siwa.jpg",
+            image: "/Media.jpg",
             seatMap: bookingData.originalTripData?.seatMap,
             oneWayBasePrice: parsePriceValue(tempOneWay),
             roundTripBasePrice: parsePriceValue(tempRoundTrip),
@@ -700,7 +700,7 @@ export default function Home() {
         availableSeats: trip.availableSeats ?? 0,
         flightNumber: trip.flightNumber || "",
         price: priceLabel,
-        image: "/siwa.jpg",
+        image: "/Media.jpg",
         seatMap: normalizedSeatMap,
         oneWayBasePrice: normalizedOneWay,
         roundTripBasePrice: normalizedRoundTrip,
@@ -890,7 +890,7 @@ export default function Home() {
           <div className="flex flex-col md:flex-row gap-8">
             <div className="flex-1 flex items-center justify-center">
               <Image
-                src="/siwa.jpg"
+                src="/Media.jpg"
                 width={400}
                 height={300}
                 alt="Siwa"
@@ -901,23 +901,17 @@ export default function Home() {
               <h2 className="text-2xl font-bold text-[#114577] mb-2">
                 Fly to {to}
               </h2>
-              <div className="text-gray-700 mb-2">
-                <span className="font-semibold">Coach Type</span> : AC
-              </div>
-              <div className="text-gray-700 mb-2">
-                <span className="font-semibold">Passenger Capacity</span> : 44
-              </div>
               <div className="flex gap-4 mb-2">
                 <div className="bg-gray-100 rounded-lg p-2 flex-1">
                   <div className="font-semibold text-[#114577]">Boarding</div>
                   <div className="text-sm text-gray-600">
-                    Siwa Oasis | North Airport (2:00 pm)
+                    {from === "Siwa" ? "Siwa Oasis | North Airport" : "Cairo | East Airport"}
                   </div>
                 </div>
                 <div className="bg-gray-100 rounded-lg p-2 flex-1">
                   <div className="font-semibold text-[#114577]">Dropping</div>
                   <div className="text-sm text-gray-600">
-                    Cairo | East Airport (3:30 am)
+                    {to === "Cairo" ? "Cairo | East Airport" : "Siwa Oasis | North Airport"}
                   </div>
                 </div>
               </div>
@@ -943,6 +937,35 @@ export default function Home() {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="flex items-end justify-center pb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const temp = from;
+                        setFrom(to);
+                        setTo(temp);
+                      }}
+                      className="p-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+                      aria-label="Switch from and to locations"
+                      title="Switch locations"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5 text-[#114577]"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                        />
+                      </svg>
+                    </button>
                   </div>
 
                   <div className="flex flex-col w-full md:w-1/4">

@@ -35,7 +35,7 @@ const TripCard = forwardRef<TripCardRef, TripCardProps>(
       availableSeats,
       flightNumber,
       price,
-      image = "/siwa.jpg",
+      image = "/Media.jpg",
       tripData,
       onModalOpenChange,
     },
@@ -72,7 +72,7 @@ const TripCard = forwardRef<TripCardRef, TripCardProps>(
         {/* Trip Image */}
         <div className="shrink-0">
           <Image
-            src={image}
+            src="/Media.jpg"
             className="rounded-2xl object-cover w-full h-48 md:h-full md:w-48"
             width={150}
             height={150}
