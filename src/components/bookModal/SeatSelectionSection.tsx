@@ -62,7 +62,7 @@ const SeatSelectionSection: React.FC<SeatSelectionSectionProps> = ({
         </p>
       </div>
 
-      <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 border-2 border-gray-100 shadow-sm">
+      <div className="bg-white rounded-xl sm:rounded-2xl p-0 md:p-4 border-2 border-gray-100 shadow-sm">
         {isLoadingSeats ? (
           <div className="text-center py-6 text-sm text-gray-500">Loading seats...</div>
         ) : seatError ? (
@@ -72,12 +72,13 @@ const SeatSelectionSection: React.FC<SeatSelectionSectionProps> = ({
             Seat map is unavailable for this trip.
           </div>
         ) : (
-          <div className="bg-gray-50 dark:bg-gray-800 p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 space-y-4">
-            <div className="flex flex-wrap justify-center gap-4 pb-4 border-b border-gray-200 dark:border-gray-600 text-xs sm:text-sm">
+          <div className="overflow-x-auto sm:overflow-visible -mx-2 sm:mx-0 px-2 sm:px-0">
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 space-y-4  sm:min-w-0">
+            <div className="flex flex-wrap justify-center gap-3 sm:gap-4 pb-4 border-b border-gray-200 dark:border-gray-600 text-[11px] sm:text-sm">
               {seatLegendItems.map((item) => (
                 <div
                   key={item.label}
-                  className="flex items-center gap-2 text-gray-600 dark:text-gray-400"
+                  className="flex items-center gap-1.5 sm:gap-2 text-gray-600 dark:text-gray-400"
                 >
                   <div className={`w-4 h-4 rounded-full border ${item.className}`}></div>
                   <span>{item.label}</span>
@@ -87,7 +88,7 @@ const SeatSelectionSection: React.FC<SeatSelectionSectionProps> = ({
 
             <div className="relative rounded-2xl bg-linear-to-r from-slate-900 to-slate-800 text-white px-4 sm:px-6 py-3 flex items-center justify-between shadow-inner">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">Cockpit</p>
+               
                 <p className="text-sm sm:text-base font-semibold">Front Cabin</p>
               </div>
               <svg className="w-8 h-8 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -100,14 +101,14 @@ const SeatSelectionSection: React.FC<SeatSelectionSectionProps> = ({
               </svg>
             </div>
 
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.35em] text-gray-500 dark:text-gray-400 px-4">
-              <div className="flex gap-4 sm:gap-6">
+            <div className="flex items-center justify-between text-[9px] sm:text-[10px] uppercase tracking-[0.35em] text-gray-500 dark:text-gray-400 px-4">
+              <div className="flex gap-3 sm:gap-6">
                 {cabinColumnLabels.left.map((label) => (
                   <span key={`col-left-${label}`}>{label}</span>
                 ))}
               </div>
               {/* <span className="text-[9px] sm:text-[10px] font-semibold tracking-[0.4em]">Aisle</span> */}
-              <div className="flex gap-4 sm:gap-6">
+              <div className="flex gap-3 sm:gap-6">
                 {cabinColumnLabels.right.map((label) => (
                   <span key={`col-right-${label}`}>{label}</span>
                 ))}
@@ -119,32 +120,31 @@ const SeatSelectionSection: React.FC<SeatSelectionSectionProps> = ({
                 Seat layout is unavailable.
               </div>
             ) : (
-              <div className="flex flex-col gap-3 sm:gap-4 items-center">
+              <div className="flex flex-col gap-2.5 sm:gap-4 justify-center items-center">
                 {seatRows.map((row, rowIndex) => {
                   const rowLabel = getRowLabel(row, rowIndex + 1);
                   return (
                     <div
                       key={`seat-row-${rowIndex}`}
-                      className="flex items-center gap-2 sm:gap-3 w-full max-w-xl"
+                      className="flex items-center justify-center gap-1.5 sm:gap-3 w-full max-w-full"
                     >
-                      <div className="w-6 text-[11px] font-semibold text-gray-500 text-right">
+                      <div className="w-5 hidden md:flex text-[9px] sm:text-[11px] font-semibold text-gray-500 text-right">
                         {rowLabel}
                       </div>
-                      <div className="flex gap-3 sm:gap-4">
+                      <div className="flex gap-2 sm:gap-4">
                         {row.left.map((seat, seatIndex) =>
                           renderSeatNode(seat, `left-${rowIndex}-${seatIndex}`)
                         )}
                       </div>
                       <div className="flex flex-col items-center px-2">
-                        {/* <div className="w-8 sm:w-10 h-14 sm:h-16 border-x border-dashed border-gray-300 dark:border-gray-600 rounded-full bg-linear-to-b from-transparent via-gray-200/70 to-transparent"></div> */}
-                        {/* <span className="text-[9px] uppercase tracking-[0.3em] text-gray-400 mt-1">aisle</span> */}
+                      
                       </div>
-                      <div className="flex gap-3 sm:gap-4">
+                      <div className="flex gap-2 sm:gap-4">
                         {row.right.map((seat, seatIndex) =>
                           renderSeatNode(seat, `right-${rowIndex}-${seatIndex}`)
                         )}
                       </div>
-                      <div className="w-6 text-[11px] font-semibold text-gray-500">{rowLabel}</div>
+                      <div className="w-5 hidden md:flex text-[9px] sm:text-[11px] font-semibold text-gray-500">{rowLabel}</div>
                     </div>
                   );
                 })}
@@ -155,7 +155,7 @@ const SeatSelectionSection: React.FC<SeatSelectionSectionProps> = ({
               Tail Section
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600 dark:text-gray-300">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 text-xs text-gray-600 dark:text-gray-300">
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/40 px-3 py-3 text-center">
                 <p className="text-[10px] uppercase tracking-[0.3em] text-gray-400">Selected Seats</p>
                 <p className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -173,6 +173,7 @@ const SeatSelectionSection: React.FC<SeatSelectionSectionProps> = ({
             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-300 text-center">
               Showing {seats.length} seat{seats.length === 1 ? "" : "s"}
             </p>
+            </div>
           </div>
         )}
       </div>
