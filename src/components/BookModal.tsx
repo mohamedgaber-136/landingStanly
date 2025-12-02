@@ -1287,13 +1287,12 @@ const BookModal: React.FC<BookModalProps> = ({
     const seatLetters = seatLabel.replace(/[0-9]/g, "") || "Seat";
 
     let buttonClasses =
-      "w-12 h-14 sm:w-14 sm:h-16 flex flex-col items-center justify-center rounded-2xl border bg-gray-300 text-black font-semibold text-xs sm:text-sm transition-colors duration-200 shadow-sm";
+      "w-10 h-12 sm:w-14 sm:h-16 flex flex-col items-center justify-center rounded-2xl border font-semibold text-[11px] sm:text-sm transition-colors duration-200 shadow-sm";
 
     if (isUnavailable) {
       buttonClasses += " bg-red-500 border-red-400 text-white cursor-not-allowed";
     } else if (isSelected) {
-      buttonClasses +=
-        " bg-green-600 text-white shadow-lg";
+      buttonClasses += " bg-green-600 text-white shadow-lg";
     } 
      else {
       buttonClasses += " bg-white border-gray-300 text-blue-900 hover:bg-gray-50";
@@ -1319,15 +1318,15 @@ const BookModal: React.FC<BookModalProps> = ({
             seatOneWay
           )} | RT ${formatCurrencyValue(seatRoundTrip)}`}
         >
-          <span className="text-[10px] uppercase tracking-[0.3em] ">
+          <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.3em]">
             {seatLetters}
           </span>
-          <span className="text-sm sm:text-base font-bold leading-none">
+          <span className="text-xs sm:text-base font-bold leading-none">
             {seatDigits}
           </span>
         </button>
         <div
-          className={`flex flex-col gap-1 text-[10px] sm:text-[11px] leading-tight font-medium ${priceTextClass}`}
+          className={`flex flex-col gap-1 text-[9px] sm:text-[11px] leading-tight font-medium ${priceTextClass}`}
         >
           <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white text-gray-700 border border-gray-200 shadow-sm">
             <span className="text-[9px] font-semibold mr-1">OW</span>
@@ -1705,7 +1704,7 @@ const BookModal: React.FC<BookModalProps> = ({
           </div>
 
           {/* Content */}
-          <div className="overflow-y-auto max-h-[calc(95vh-80px)] sm:max-h-[calc(90vh-120px)] p-4 sm:p-6 lg:p-8">
+          <div className="overflow-y-auto max-h-[calc(95vh-80px)] sm:max-h-[calc(90vh-120px)] p-2  lg:p-8">
             {bookingConfirmed ? (
               <BookingConfirmationView
                 bookingDetails={bookingDetails}
