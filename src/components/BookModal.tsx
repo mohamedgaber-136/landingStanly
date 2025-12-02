@@ -25,6 +25,8 @@ import type {
   SeatLegendItem,
 } from "./bookModal/types";
 
+const SEAT_COLUMN_ORDER = ["A", "B", "C", "D"];
+
 const DISPLAY_CURRENCY = "EGP";
 
 const BookModal: React.FC<BookModalProps> = ({
@@ -270,15 +272,55 @@ const BookModal: React.FC<BookModalProps> = ({
     [parsePriceValue, tripData?.roundTripBasePrice, baseTripPrice]
   );
 
+  const parseSeatPosition = useCallback((seatNumber?: string) => {
+    if (!seatNumber) {
+      return { rowNumber: null, columnLetter: null };
+    }
+    const normalized = seatNumber.toString().toUpperCase();
+    const rowMatch = normalized.match(/\d+/);
+    const rowNumber = rowMatch ? Number(rowMatch[0]) : null;
+    const letterMatches = normalized.match(/[A-Z]+/g);
+    const letterGroup = letterMatches ? letterMatches[letterMatches.length - 1] : null;
+    const columnLetter = letterGroup ? letterGroup.slice(-1) : null;
+    return { rowNumber, columnLetter };
+  }, []);
+
   const sortedSeats = useMemo(
     () =>
-      [...seats].sort((a, b) =>
-        (a?.seatNumber || "").localeCompare(b?.seatNumber || "", undefined, {
+      [...seats].sort((a, b) => {
+        const metaA = parseSeatPosition(a?.seatNumber);
+        const metaB = parseSeatPosition(b?.seatNumber);
+
+        if (
+          metaA.rowNumber !== null &&
+          metaB.rowNumber !== null &&
+          metaA.rowNumber !== metaB.rowNumber
+        ) {
+          return metaA.rowNumber - metaB.rowNumber;
+        }
+
+        if (metaA.rowNumber !== null && metaB.rowNumber === null) return -1;
+        if (metaA.rowNumber === null && metaB.rowNumber !== null) return 1;
+
+        const columnIndexA =
+          metaA.columnLetter && SEAT_COLUMN_ORDER.includes(metaA.columnLetter)
+            ? SEAT_COLUMN_ORDER.indexOf(metaA.columnLetter)
+            : SEAT_COLUMN_ORDER.length;
+        const columnIndexB =
+          metaB.columnLetter && SEAT_COLUMN_ORDER.includes(metaB.columnLetter)
+            ? SEAT_COLUMN_ORDER.indexOf(metaB.columnLetter)
+            : SEAT_COLUMN_ORDER.length;
+
+        if (columnIndexA !== columnIndexB) {
+          return columnIndexA - columnIndexB;
+        }
+
+        return (a?.seatNumber || "").localeCompare(b?.seatNumber || "", undefined, {
           numeric: true,
           sensitivity: "base",
-        })
-      ),
-    [seats]
+        });
+      }),
+    [parseSeatPosition, seats]
   );
 
   const seatRows = useMemo(() => {
@@ -286,16 +328,71 @@ const BookModal: React.FC<BookModalProps> = ({
       return [] as SeatRow[];
     }
 
-    const rows: SeatRow[] = [];
-    for (let i = 0; i < sortedSeats.length; i += 4) {
-      const rowSeats = sortedSeats.slice(i, i + 4);
-      rows.push({
-        left: [rowSeats[0] ?? null, rowSeats[1] ?? null],
-        right: [rowSeats[2] ?? null, rowSeats[3] ?? null],
+    const rowsMap = new Map<
+      string,
+      {
+        seatsByColumn: Partial<Record<string, SeatInfo | null>>;
+        rowNumber: number | null;
+        fallbackIndex: number;
+      }
+    >();
+
+    sortedSeats.forEach((seat, index) => {
+      const { rowNumber, columnLetter } = parseSeatPosition(seat?.seatNumber);
+      const rowKey = rowNumber !== null ? `row-${rowNumber}` : `index-${index}`;
+
+      if (!rowsMap.has(rowKey)) {
+        rowsMap.set(rowKey, {
+          seatsByColumn: {},
+          rowNumber,
+          fallbackIndex: index,
+        });
+      }
+
+      const columnKey = columnLetter ?? `extra-${index}`;
+      rowsMap.get(rowKey)!.seatsByColumn[columnKey] = seat;
+    });
+
+    return [...rowsMap.values()]
+      .sort((a, b) => {
+        if (
+          a.rowNumber !== null &&
+          b.rowNumber !== null &&
+          a.rowNumber !== b.rowNumber
+        ) {
+          return a.rowNumber - b.rowNumber;
+        }
+
+        if (a.rowNumber !== null && b.rowNumber === null) return -1;
+        if (a.rowNumber === null && b.rowNumber !== null) return 1;
+
+        return a.fallbackIndex - b.fallbackIndex;
+      })
+      .map((rowData) => {
+        const orderedSeats = SEAT_COLUMN_ORDER.map(
+          (letter) => rowData.seatsByColumn[letter] ?? null
+        );
+
+        const leftovers = Object.entries(rowData.seatsByColumn)
+          .filter(([key]) => !SEAT_COLUMN_ORDER.includes(key))
+          .map(([, seat]) => seat ?? null);
+
+        for (let i = 0; i < orderedSeats.length && leftovers.length > 0; i++) {
+          if (!orderedSeats[i]) {
+            orderedSeats[i] = leftovers.shift() ?? null;
+          }
+        }
+
+        while (orderedSeats.length < 4) {
+          orderedSeats.push(null);
+        }
+
+        return {
+          left: orderedSeats.slice(0, 2),
+          right: orderedSeats.slice(2, 4),
+        };
       });
-    }
-    return rows;
-  }, [sortedSeats]);
+  }, [parseSeatPosition, sortedSeats]);
 
   const cabinColumnLabels = useMemo(
     () => ({ left: ["A", "B"], right: ["C", "D"] }),
@@ -1283,8 +1380,12 @@ const BookModal: React.FC<BookModalProps> = ({
     const hasAnyPrice =
       typeof seatOneWay === "number" || typeof seatRoundTrip === "number";
     const seatLabel = seat.seatNumber || "—";
-    const seatDigits = seatLabel.replace(/\D+/g, "") || seatLabel;
-    const seatLetters = seatLabel.replace(/[0-9]/g, "") || "Seat";
+    const seatDigits = seatLabel.replace(/\D+/g, "");
+    const seatLetters = seatLabel.replace(/[0-9]/g, "");
+    const normalizedSeatLabel =
+      seatDigits && seatLetters
+        ? `${seatDigits}${seatLetters.toLowerCase()}`
+        : seatLabel;
 
     let buttonClasses =
       "w-10 h-12 sm:w-14 sm:h-16 flex flex-col items-center justify-center rounded-2xl border font-semibold text-[11px] sm:text-sm transition-colors duration-200 shadow-sm";
@@ -1318,11 +1419,8 @@ const BookModal: React.FC<BookModalProps> = ({
             seatOneWay
           )} | RT ${formatCurrencyValue(seatRoundTrip)}`}
         >
-          <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.3em]">
-            {seatLetters}
-          </span>
           <span className="text-xs sm:text-base font-bold leading-none">
-            {seatDigits}
+            {normalizedSeatLabel}
           </span>
         </button>
         <div
