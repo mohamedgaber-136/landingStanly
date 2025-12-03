@@ -25,8 +25,6 @@ import type {
   SeatLegendItem,
 } from "./bookModal/types";
 
-const SEAT_COLUMN_ORDER = ["A", "B", "C", "D"];
-
 const DISPLAY_CURRENCY = "EGP";
 
 const BookModal: React.FC<BookModalProps> = ({
@@ -280,7 +278,9 @@ const BookModal: React.FC<BookModalProps> = ({
     const rowMatch = normalized.match(/\d+/);
     const rowNumber = rowMatch ? Number(rowMatch[0]) : null;
     const letterMatches = normalized.match(/[A-Z]+/g);
-    const letterGroup = letterMatches ? letterMatches[letterMatches.length - 1] : null;
+    const letterGroup = letterMatches
+      ? letterMatches[letterMatches.length - 1]
+      : null;
     const columnLetter = letterGroup ? letterGroup.slice(-1) : null;
     return { rowNumber, columnLetter };
   }, []);
@@ -302,23 +302,14 @@ const BookModal: React.FC<BookModalProps> = ({
         if (metaA.rowNumber !== null && metaB.rowNumber === null) return -1;
         if (metaA.rowNumber === null && metaB.rowNumber !== null) return 1;
 
-        const columnIndexA =
-          metaA.columnLetter && SEAT_COLUMN_ORDER.includes(metaA.columnLetter)
-            ? SEAT_COLUMN_ORDER.indexOf(metaA.columnLetter)
-            : SEAT_COLUMN_ORDER.length;
-        const columnIndexB =
-          metaB.columnLetter && SEAT_COLUMN_ORDER.includes(metaB.columnLetter)
-            ? SEAT_COLUMN_ORDER.indexOf(metaB.columnLetter)
-            : SEAT_COLUMN_ORDER.length;
-
-        if (columnIndexA !== columnIndexB) {
-          return columnIndexA - columnIndexB;
-        }
-
-        return (a?.seatNumber || "").localeCompare(b?.seatNumber || "", undefined, {
-          numeric: true,
-          sensitivity: "base",
-        });
+        return (a?.seatNumber || "").localeCompare(
+          b?.seatNumber || "",
+          undefined,
+          {
+            numeric: true,
+            sensitivity: "base",
+          }
+        );
       }),
     [parseSeatPosition, seats]
   );
@@ -328,76 +319,26 @@ const BookModal: React.FC<BookModalProps> = ({
       return [] as SeatRow[];
     }
 
-    const rowsMap = new Map<
-      string,
-      {
-        seatsByColumn: Partial<Record<string, SeatInfo | null>>;
-        rowNumber: number | null;
-        fallbackIndex: number;
-      }
-    >();
+    const rows: SeatRow[] = [];
 
-    sortedSeats.forEach((seat, index) => {
-      const { rowNumber, columnLetter } = parseSeatPosition(seat?.seatNumber);
-      const rowKey = rowNumber !== null ? `row-${rowNumber}` : `index-${index}`;
+    // Group seats into rows: every 4 seats = 1 row
+    for (let i = 0; i < sortedSeats.length; i += 4) {
+      const rowSeats = sortedSeats.slice(i, i + 4);
 
-      if (!rowsMap.has(rowKey)) {
-        rowsMap.set(rowKey, {
-          seatsByColumn: {},
-          rowNumber,
-          fallbackIndex: index,
-        });
+      // Pad row to exactly 4 seats if needed
+      while (rowSeats.length < 4) {
+        rowSeats.push(null as any);
       }
 
-      const columnKey = columnLetter ?? `extra-${index}`;
-      rowsMap.get(rowKey)!.seatsByColumn[columnKey] = seat;
-    });
-
-    return [...rowsMap.values()]
-      .sort((a, b) => {
-        if (
-          a.rowNumber !== null &&
-          b.rowNumber !== null &&
-          a.rowNumber !== b.rowNumber
-        ) {
-          return a.rowNumber - b.rowNumber;
-        }
-
-        if (a.rowNumber !== null && b.rowNumber === null) return -1;
-        if (a.rowNumber === null && b.rowNumber !== null) return 1;
-
-        return a.fallbackIndex - b.fallbackIndex;
-      })
-      .map((rowData) => {
-        const orderedSeats = SEAT_COLUMN_ORDER.map(
-          (letter) => rowData.seatsByColumn[letter] ?? null
-        );
-
-        const leftovers = Object.entries(rowData.seatsByColumn)
-          .filter(([key]) => !SEAT_COLUMN_ORDER.includes(key))
-          .map(([, seat]) => seat ?? null);
-
-        for (let i = 0; i < orderedSeats.length && leftovers.length > 0; i++) {
-          if (!orderedSeats[i]) {
-            orderedSeats[i] = leftovers.shift() ?? null;
-          }
-        }
-
-        while (orderedSeats.length < 4) {
-          orderedSeats.push(null);
-        }
-
-        return {
-          left: orderedSeats.slice(0, 2),
-          right: orderedSeats.slice(2, 4),
-        };
+      // Split into left (2 seats) and right (2 seats)
+      rows.push({
+        left: rowSeats.slice(0, 2),
+        right: rowSeats.slice(2, 4),
       });
-  }, [parseSeatPosition, sortedSeats]);
+    }
 
-  const cabinColumnLabels = useMemo(
-    () => ({ left: ["A", "B"], right: ["C", "D"] }),
-    []
-  );
+    return rows;
+  }, [sortedSeats]);
 
   const getRowLabel = useCallback((row: SeatRow, fallbackIndex: number) => {
     const seatWithNumber = [...row.left, ...row.right].find(
@@ -1353,7 +1294,7 @@ const BookModal: React.FC<BookModalProps> = ({
 
   const seatLegendItems: SeatLegendItem[] = [
     { label: "Available", className: "bg-white border-gray-300" },
- 
+
     {
       label: "Selected",
       className:
@@ -1367,9 +1308,15 @@ const BookModal: React.FC<BookModalProps> = ({
       return (
         <div
           key={key}
-          className="w-12 h-12 sm:w-14 sm:h-14 opacity-0 pointer-events-none"
+          className="flex flex-col items-center gap-2 text-center w-20 sm:w-24 invisible pointer-events-none"
           aria-hidden
-        />
+        >
+          <div className="w-12 h-14 sm:w-16 sm:h-20 rounded-2xl border" />
+          <div className="flex flex-col gap-1 text-[9px] sm:text-[11px] w-full">
+            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full border" />
+            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full border" />
+          </div>
+        </div>
       );
     }
 
@@ -1388,15 +1335,16 @@ const BookModal: React.FC<BookModalProps> = ({
         : seatLabel;
 
     let buttonClasses =
-      "w-10 h-12 sm:w-14 sm:h-16 flex flex-col items-center justify-center rounded-2xl border font-semibold text-[11px] sm:text-sm transition-colors duration-200 shadow-sm";
+      "w-12 h-14 sm:w-16 sm:h-20 flex flex-col items-center justify-center rounded-2xl border font-semibold text-[12px] sm:text-base transition-colors duration-200 shadow-sm";
 
     if (isUnavailable) {
-      buttonClasses += " bg-red-500 border-red-400 text-white cursor-not-allowed";
+      buttonClasses +=
+        " bg-red-500 border-red-400 text-white cursor-not-allowed";
     } else if (isSelected) {
       buttonClasses += " bg-green-600 text-white shadow-lg";
-    } 
-     else {
-      buttonClasses += " bg-white border-gray-300 text-blue-900 hover:bg-gray-50";
+    } else {
+      buttonClasses +=
+        " bg-white border-gray-300 text-blue-900 hover:bg-gray-50";
     }
 
     const priceTextClass = isSelected
@@ -1406,7 +1354,7 @@ const BookModal: React.FC<BookModalProps> = ({
     return (
       <div
         key={seat.id}
-        className="flex flex-col items-center gap-1 text-center w-16 sm:w-20"
+        className="flex flex-col items-center gap-2 text-center w-20 sm:w-24"
       >
         <button
           type="button"
@@ -1826,7 +1774,6 @@ const BookModal: React.FC<BookModalProps> = ({
                   seats={seats}
                   seatLegendItems={seatLegendItems}
                   seatRows={seatRows}
-                  cabinColumnLabels={cabinColumnLabels}
                   renderSeatNode={renderSeatNode}
                   getRowLabel={getRowLabel}
                   selectedSeatsCount={selectedSeats.length}

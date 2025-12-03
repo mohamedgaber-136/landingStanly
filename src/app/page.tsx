@@ -165,6 +165,11 @@ export default function Home() {
     [availableDateSet, today, yearStartDate, yearEndDate]
   );
 
+  const tripsForSelectedDate = useMemo(() => {
+    if (!selectedDate) return searchResults;
+    return searchResults.filter((t) => t.departure === selectedDate);
+  }, [searchResults, selectedDate]);
+
   const getYearBoundaries = (year: number) => {
     const startUtc = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
     const endUtc = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
@@ -905,13 +910,17 @@ export default function Home() {
                 <div className="bg-gray-100 rounded-lg p-2 flex-1">
                   <div className="font-semibold text-[#114577]">Boarding</div>
                   <div className="text-sm text-gray-600">
-                    {from === "Siwa" ? "Siwa Oasis | North Airport" : "Cairo | East Airport"}
+                    {from === "Siwa"
+                      ? "Siwa Oasis | North Airport"
+                      : "Cairo | East Airport"}
                   </div>
                 </div>
                 <div className="bg-gray-100 rounded-lg p-2 flex-1">
                   <div className="font-semibold text-[#114577]">Dropping</div>
                   <div className="text-sm text-gray-600">
-                    {to === "Cairo" ? "Cairo | East Airport" : "Siwa Oasis | North Airport"}
+                    {to === "Cairo"
+                      ? "Cairo | East Airport"
+                      : "Siwa Oasis | North Airport"}
                   </div>
                 </div>
               </div>
@@ -1048,13 +1057,13 @@ export default function Home() {
           </div>
           {/* Results area */}
           <div className="mt-4 w-full">
-            {searchResults.length === 0 && hasSearched ? (
+            {hasSearched && tripsForSelectedDate.length === 0 ? (
               <div className="bg-white rounded-lg p-6 text-center text-gray-600">
                 No trips found for the selected dates.
               </div>
             ) : null}
 
-            {searchResults.length > 0 && (
+            {tripsForSelectedDate.length > 0 && (
               <div className="bg-white rounded-lg shadow p-4 mt-4">
                 {/* Date tabs */}
                 <div className="flex gap-3 mb-4 flex-wrap">
@@ -1085,32 +1094,29 @@ export default function Home() {
 
                 {/* List of trip cards for selectedDate */}
                 <div className="mt-4 flex flex-col gap-4">
-                  {searchResults
-                    .filter((t) =>
-                      selectedDate ? t.departure === selectedDate : true
-                    )
-                    .map((trip) => (
-                      <div key={trip.id} className="border-t pt-4">
-                        <TripCard
-                          ref={(r) => {
-                            tripCardRefs.current[trip.id] = r as TripCardRef;
-                          }}
-                          from={trip.from}
-                          to={trip.to}
-                          departure={trip.departure}
-                          availableSeats={trip.availableSeats}
-                          flightNumber={trip.flightNumber}
-                          price={trip.price}
-                          image={trip.image}
-                          tripData={trip}
-                        />
-                      </div>
-                    ))}
+                  {tripsForSelectedDate.map((trip) => (
+                    <div key={trip.id} className="border-t pt-4">
+                      <TripCard
+                        ref={(r) => {
+                          tripCardRefs.current[trip.id] = r as TripCardRef;
+                        }}
+                        from={trip.from}
+                        to={trip.to}
+                        departure={trip.departure}
+                        availableSeats={trip.availableSeats}
+                        flightNumber={trip.flightNumber}
+                        price={trip.price}
+                        image={trip.image}
+                        tripData={trip}
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            {swapSuggestion ? (
+            {!(hasSearched && tripsForSelectedDate.length === 0) &&
+            swapSuggestion ? (
               <div className="bg-[#e6f3fb] border border-[#b7e0f8] rounded-lg p-5 mt-4">
                 <p className="text-sm font-semibold text-[#0f4c81]">
                   {swapSuggestion.message}
