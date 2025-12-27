@@ -202,15 +202,23 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
                     className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200"
                   />
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
-                      {passenger.type === "ADULT" ? "Passport (Optional)" : "Birth Certificate (Optional)"}
+                    <label className="flex items-center justify-between text-xs sm:text-sm font-semibold text-gray-700 mb-2">
+                      <span>
+                        {passenger.type === "ADULT"
+                          ? "Passport or National ID Document"
+                          : "Birth Certificate Upload"}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-wide text-red-500">Required</span>
                     </label>
                     <input
                       type="file"
-                      accept={passenger.type === "ADULT" ? "image/*" : "application/pdf,image/*"}
+                      accept="application/pdf,image/*"
                       onChange={(e) => handleFileUpload(index, e)}
                       className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-orange-500 outline-none transition-all duration-200 text-sm sm:text-base file:mr-2 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
                     />
+                    <p className="mt-2 text-[11px] sm:text-xs text-gray-500">
+                      Upload a clear PDF, JPG, or PNG (max 10MB) for every passenger.
+                    </p>
                     {passenger.files?.length ? (
                       <div className="mt-3 space-y-2">
                         <p className="text-xs text-gray-500">

@@ -7,7 +7,7 @@ import Image from "next/image";
 import toast from "react-hot-toast";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
-
+import image from '../../public/Media.jpg'
 // Minimal Trip type used in this page
 interface Trip {
   id: string;
@@ -890,19 +890,17 @@ export default function Home() {
 
   return (
     <>
-      <div className="min-h-screen flex items-center justify-center bg-[#114577]">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-auto p-8 flex flex-col gap-8">
-          <div className="flex flex-col md:flex-row gap-8">
-            <div className="flex-1 flex items-center justify-center">
-              <Image
-                src="/Media.jpg"
-                width={400}
-                height={300}
+      <div className="min-h-screen relative flex items-center justify-center bg-[#114577] w-[80%]">
+        <div className="bg-white rounded-2xl shadow-2xl w-full p-8 flex flex-col gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 md:flex-row gap-8">
+            <div className="flex-1 col-span-3 lg:col-span-1 flex items-center justify-start">
+              <img
+                src={image.src}
                 alt="Siwa"
-                className="rounded-xl object-cover"
+                className="rounded-xl object-cover w-full"
               />
             </div>
-            <div className="flex-1 flex flex-col gap-4 justify-center">
+            <div className="flex-1 flex flex-col gap-4 justify-start">
               <h2 className="text-2xl font-bold text-[#114577] mb-2">
                 Fly to {to}
               </h2>
@@ -1144,6 +1142,9 @@ export default function Home() {
             ) : null}
           </div>
         </div>
+        <button className="floatBtn">
+          <a href="https://stanlyegypt.com" >Home Page</a>
+        </button>
       </div>
       {isCalendarModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">

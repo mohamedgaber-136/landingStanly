@@ -1153,10 +1153,15 @@ const BookModal: React.FC<BookModalProps> = ({
     )
       return false;
 
-    // Check if all passengers have required info (files are optional)
+    // Check if all passengers have required info (documents now mandatory)
     for (const passenger of passengers) {
       // All passengers must have a name
       if (!passenger.name || passenger.name.trim().length === 0) return false;
+
+      const hasFiles = Array.isArray(passenger.files) && passenger.files.length > 0;
+      if (!hasFiles) {
+        return false;
+      }
 
       // Adults must have passport/ID number with at least 3 characters
       if (passenger.type === "ADULT") {
@@ -1234,6 +1239,17 @@ const BookModal: React.FC<BookModalProps> = ({
 
         if (!passenger.name || passenger.name.trim().length === 0) {
           errors.push(`${passengerLabel}: Please enter passenger name`);
+        }
+
+        const hasFiles = Array.isArray(passenger.files) && passenger.files.length > 0;
+        if (!hasFiles) {
+          errors.push(
+            `${passengerLabel}: Please upload ${
+              passenger.type === "ADULT"
+                ? "a passport or ID document"
+                : "a birth certificate"
+            }`
+          );
         }
 
         if (passenger.type === "ADULT") {
@@ -1371,18 +1387,7 @@ const BookModal: React.FC<BookModalProps> = ({
             {normalizedSeatLabel}
           </span>
         </button>
-        <div
-          className={`flex flex-col gap-1 text-[9px] sm:text-[11px] leading-tight font-medium ${priceTextClass}`}
-        >
-          <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white text-gray-700 border border-gray-200 shadow-sm">
-            <span className="text-[9px] font-semibold mr-1">OW</span>
-            {formatCurrencyValue(seatOneWay)}
-          </span>
-          <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white text-gray-700 border border-gray-200 shadow-sm">
-            <span className="text-[9px] font-semibold mr-1">RT</span>
-            {formatCurrencyValue(seatRoundTrip)}
-          </span>
-        </div>
+       
       </div>
     );
   };
@@ -1765,7 +1770,7 @@ const BookModal: React.FC<BookModalProps> = ({
                 onCancelBooking={handleCancelBooking}
               />
             ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-10">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 lg:gap-10">
                 <SeatSelectionSection
                   numberOfAdults={numberOfAdults}
                   numberOfInfants={numberOfInfants}
