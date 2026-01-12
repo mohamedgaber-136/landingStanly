@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import type { Passenger } from "./types";
 
 interface PassengerInformationSectionProps {
@@ -64,8 +64,21 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
   handleBooking,
   isLoading,
 }) => {
+  // ===== Debounce for booking button =====
+  const bookingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleDebouncedBooking = () => {
+    if (bookingTimeoutRef.current) return; // تمنع الضغط المتكرر
+    bookingTimeoutRef.current = setTimeout(() => {
+      handleBooking();
+      bookingTimeoutRef.current = null; // السماح بالضغط مرة أخرى بعد تنفيذ الدالة
+    }, 500); // نصف ثانية تأخير
+  };
+  // ======================================
+
   return (
     <div className="space-y-3 sm:space-y-6">
+      {/* Passenger Info Header */}
       <div className="bg-linear-to-r from-green-50 to-emerald-50 rounded-2xl p-4 sm:p-6 border border-green-200">
         <h4 className="text-base sm:text-lg font-bold text-gray-900 flex items-center gap-2">
           <svg className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -75,6 +88,7 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
         </h4>
       </div>
 
+      {/* Contact Information */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-100 shadow-sm">
         <h6 className="font-semibold text-base text-gray-900 mb-3 flex items-center gap-2">
           <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -83,24 +97,20 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
           Contact Information
         </h6>
         <div className="space-y-3 sm:space-y-4">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Full Name"
-              value={bookerName}
-              onChange={(e) => setBookerName(e.target.value)}
-              className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200"
-            />
-          </div>
-          <div className="relative">
-            <input
-              type="email"
-              placeholder="Email Address"
-              value={bookerEmail}
-              onChange={(e) => setBookerEmail(e.target.value)}
-              className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200"
-            />
-          </div>
+          <input
+            type="text"
+            placeholder="Full Name"
+            value={bookerName}
+            onChange={(e) => setBookerName(e.target.value)}
+            className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200"
+          />
+          <input
+            type="email"
+            placeholder="Email Address"
+            value={bookerEmail}
+            onChange={(e) => setBookerEmail(e.target.value)}
+            className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200"
+          />
           <div className="relative">
             <input
               type="tel"
@@ -127,6 +137,7 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
         </div>
       </div>
 
+      {/* Passengers Count */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-100 shadow-sm">
         <h4 className="font-semibold text-base sm:text-lg text-gray-900 mb-3 flex items-center gap-2">
           <svg className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,7 +155,7 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
             <label className="block text-sm font-semibold text-gray-700 mb-2">Adults</label>
             <input
               type="number"
-              min="1"
+              min={1}
               max={availableSeats}
               value={numberOfAdults}
               onChange={(e) => setNumberOfAdults(Number(e.target.value))}
@@ -155,7 +166,7 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
             <label className="block text-sm font-semibold text-gray-700 mb-2">Infants</label>
             <input
               type="number"
-              min="0"
+              min={0}
               value={numberOfInfants}
               onChange={(e) => setNumberOfInfants(Number(e.target.value))}
               className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all duration-200 text-center"
@@ -164,99 +175,66 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
         </div>
       </div>
 
-      {passengers.length > 0 && (
-        <div className="space-y-3 sm:space-y-4">
-          <h4 className="font-semibold text-base sm:text-lg text-gray-900 flex items-center gap-2">
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            Passenger Details
-          </h4>
-          {passengers.map((passenger, index) => {
-            const passengersOfSameType = passengers.slice(0, index).filter((p) => p.type === passenger.type);
-            const displayNumber = passengersOfSameType.length + 1;
+      {/* Passenger Details */}
+      {passengers.length > 0 &&
+        passengers.map((passenger, index) => {
+          const passengersOfSameType = passengers.slice(0, index).filter((p) => p.type === passenger.type);
+          const displayNumber = passengersOfSameType.length + 1;
 
-            return (
-              <div key={index} className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-100 shadow-sm">
-                <h5 className="font-semibold text-base sm:text-lg text-gray-900 mb-3 flex items-center gap-2">
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 bg-linear-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm">
-                    {displayNumber}
-                  </div>
-                  {passenger.type === "ADULT" ? "Adult" : "Infant"} {displayNumber}
-                </h5>
-                <div className="space-y-3 sm:space-y-4">
-                  <input
-                    type="text"
-                    placeholder="Full Name"
-                    value={passenger.name}
-                    onChange={(e) => updatePassenger(index, "name", e.target.value)}
-                    className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200"
-                  />
-                  <input
-                    type="text"
-                    placeholder={
-                      passenger.type === "ADULT" ? "Passport Number or ID Number" : "ID Number (Optional)"
-                    }
-                    value={passenger.passportNumberOrIdNumber}
-                    onChange={(e) => updatePassenger(index, "passportNumberOrIdNumber", e.target.value)}
-                    className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200"
-                  />
-                  <div>
-                    <label className="flex items-center justify-between text-xs sm:text-sm font-semibold text-gray-700 mb-2">
-                      <span>
-                        {passenger.type === "ADULT"
-                          ? "Passport or National ID Document"
-                          : "Birth Certificate Upload"}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-wide text-red-500">Required</span>
-                    </label>
-                    <input
-                      type="file"
-                      accept="application/pdf,image/*"
-                      onChange={(e) => handleFileUpload(index, e)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-orange-500 outline-none transition-all duration-200 text-sm sm:text-base file:mr-2 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
-                    />
-                    <p className="mt-2 text-[11px] sm:text-xs text-gray-500">
-                      Upload a clear PDF, JPG, or PNG (max 10MB) for every passenger.
-                    </p>
-                    {passenger.files?.length ? (
-                      <div className="mt-3 space-y-2">
-                        <p className="text-xs text-gray-500">
-                          Uploaded files stay attached even if you return after logging in again.
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {passenger.files.map((file, fileIdx) => (
-                            <span
-                              key={`${file.originalFilename}-${fileIdx}`}
-                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 text-[11px] sm:text-xs font-semibold border border-orange-200"
-                            >
-                              {file.originalFilename || "Uploaded document"}
-                              <button
-                                type="button"
-                                onClick={() => handleRemovePassengerFile(index, fileIdx)}
-                                className="text-orange-500 hover:text-orange-700"
-                                aria-label="Remove file"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+          return (
+            <div key={index} className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-100 shadow-sm">
+              <h5 className="font-semibold text-base sm:text-lg text-gray-900 mb-3 flex items-center gap-2">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 bg-linear-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm">
+                  {displayNumber}
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                {passenger.type === "ADULT" ? "Adult" : "Infant"} {displayNumber}
+              </h5>
+              <input
+                type="text"
+                placeholder="Full Name"
+                value={passenger.name}
+                onChange={(e) => updatePassenger(index, "name", e.target.value)}
+                className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200 mb-2"
+              />
+              <input
+                type="text"
+                placeholder={passenger.type === "ADULT" ? "Passport Number or ID Number" : "ID Number (Optional)"}
+                value={passenger.passportNumberOrIdNumber}
+                onChange={(e) => updatePassenger(index, "passportNumberOrIdNumber", e.target.value)}
+                className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all duration-200 mb-2"
+              />
+              <input
+                type="file"
+                accept="application/pdf,image/*"
+                onChange={(e) => handleFileUpload(index, e)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-orange-500 outline-none transition-all duration-200 text-sm sm:text-base file:mr-2 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+              />
+              {passenger.files?.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {passenger.files.map((file, fileIdx) => (
+                    <span
+                      key={`${file.originalFilename}-${fileIdx}`}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 text-[11px] sm:text-xs font-semibold border border-orange-200"
+                    >
+                      {file.originalFilename || "Uploaded document"}
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePassengerFile(index, fileIdx)}
+                        className="text-orange-500 hover:text-orange-700"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
 
+      {/* Trip Type & Price */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-100 shadow-sm">
         <h4 className="font-semibold text-base sm:text-lg text-gray-900 mb-3 flex items-center gap-2">
-          <svg className="w-4 h-4 sm:w-5 sm:h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2v-7H3v7a2 2 0 002 2z" />
-          </svg>
           Trip Type & Price
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -271,12 +249,10 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
               className="w-full px-3 py-2 text-sm sm:text-base sm:px-4 sm:py-3 border border-gray-200 rounded-xl focus:border-teal-500 focus:ring-2 focus:ring-teal-200 outline-none transition-all duration-200 bg-white disabled:opacity-60"
             >
               <option value="ONE_WAY" disabled={oneWayPrice === undefined}>
-                One Way
-                {oneWayPrice !== undefined ? ` (${formatCurrencyValue(oneWayPrice)})` : " (Unavailable)"}
+                One Way {oneWayPrice !== undefined ? `(${formatCurrencyValue(oneWayPrice)})` : " (Unavailable)"}
               </option>
               <option value="ROUND_TRIP" disabled={roundTripPrice === undefined}>
-                Round Trip
-                {roundTripPrice !== undefined ? ` (${formatCurrencyValue(roundTripPrice)})` : " (Unavailable)"}
+                Round Trip {roundTripPrice !== undefined ? `(${formatCurrencyValue(roundTripPrice)})` : " (Unavailable)"}
               </option>
             </select>
           </div>
@@ -299,46 +275,9 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
             />
           </div>
         </div>
-        <div className="mt-4 sm:mt-6 p-4 bg-linear-to-r from-teal-50 to-blue-50 rounded-xl border border-teal-200">
-          <h5 className="font-semibold text-base text-gray-800 mb-3 flex items-center gap-2">
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
-            Price Breakdown
-          </h5>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-700">
-                <span className="font-semibold">{selectedSeatsCount || numberOfAdults}</span> {" "}
-                {selectedTripType === "ROUND_TRIP" ? "Round-Trip" : "One-Way"} Seat
-                {(selectedSeatsCount || numberOfAdults) > 1 ? "s" : ""}
-              </span>
-              <span className="font-semibold text-gray-900 text-sm sm:text-base">{formatCurrencyValue(seatTotal)}</span>
-            </div>
-            {numberOfInfants > 0 && (
-              <div className="flex justify-between items-center">
-                <span className="text-gray-700">
-                  <span className="font-semibold">{numberOfInfants}</span> Infant{numberOfInfants > 1 ? "s" : ""}
-                </span>
-                <span className="font-semibold text-gray-900 text-sm sm:text-base">{formatCurrencyValue(infantsTotal)}</span>
-              </div>
-            )}
-            <div className="border-t border-teal-300 pt-2 mt-2 flex justify-between items-center">
-              <span className="font-bold text-gray-900">Total Amount</span>
-              <span className="text-base sm:text-lg font-bold text-teal-700">{formattedTotalAmount}</span>
-            </div>
-          </div>
-        </div>
-        <p className="text-sm text-gray-500 mt-4">
-          Total updates automatically as you change seats, trip type, or infant count.
-        </p>
-        {oneWayPrice === undefined && roundTripPrice === undefined ? (
-          <p className="text-sm text-red-500 mt-2">
-            Pricing is unavailable for this trip. Please pick a different departure.
-          </p>
-        ) : null}
       </div>
 
+      {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row justify-end gap-3 sm:gap-4 pt-4 sm:pt-6">
         <button
           onClick={handleModalClose}
@@ -347,7 +286,7 @@ const PassengerInformationSection: React.FC<PassengerInformationSectionProps> = 
           Cancel
         </button>
         <button
-          onClick={handleBooking}
+          onClick={handleDebouncedBooking} // debounce هنا
           disabled={isLoading}
           className="w-full sm:w-auto px-5 py-2.5 sm:px-8 sm:py-4 rounded-xl bg-linear-to-r from-[#179FDB] to-[#0f7ac3] text-white hover:from-[#0f7ac3] hover:to-[#0a5a8a] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none text-sm sm:text-base"
         >
